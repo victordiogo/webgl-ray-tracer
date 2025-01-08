@@ -1,11 +1,5 @@
 import { Vector3 } from "three";
 
-export type RayData = {
-  initial_position: Vector3,
-  step_x: Vector3,
-  step_y: Vector3
-};
-
 export class Camera {
   polar_angle: number;
   azimuthal_angle: number;
@@ -55,25 +49,5 @@ export class Camera {
     const u = new Vector3(0, 1, 0).cross(w).normalize();
     const v = w.clone().cross(u);
     return [u, v, w];
-  }
-
-  get viewport() : { width: number, height: number } {
-    const height = 2 * this.focus_distance * Math.tan(0.5 * this.vfov * Math.PI / 180);
-    const width = this.aspect_ratio * height;
-    return { width, height };
-  }
-
-  ray_data(width: number, height: number) : RayData {
-    const [u, v, w] = this.uvw;
-    const step_x = u.clone().multiplyScalar(this.viewport.width / width);
-    const step_y = v.clone().multiplyScalar(this.viewport.height / height);
-    const initial_position = this.position.clone()
-      .sub(u.clone().multiplyScalar(0.5 * this.viewport.width))
-      .sub(v.clone().multiplyScalar(0.5 * this.viewport.height))
-      .sub(w.clone().multiplyScalar(this.focus_distance))
-      .add(step_x.clone().multiplyScalar(0.5))
-      .add(step_y.clone().multiplyScalar(0.5));
-
-    return { initial_position, step_x, step_y };
   }
 }

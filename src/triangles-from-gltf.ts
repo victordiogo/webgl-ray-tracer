@@ -34,17 +34,26 @@ export function triangles_from_gltf(gltf: GLTF) : Triangle[] {
       return;
     }
 
+    const index = geometry.index;
+
+    if (!index) {
+      return;
+    }
+
     for (let i = 0; i < position.count; i += 3) {
+      const index_a = index.getX(i);
+      const index_b = index.getX(i + 1);
+      const index_c = index.getX(i + 2);
       let triangle = new Triangle();
-      triangle.a.position = new Vector3().fromBufferAttribute(position, i);
-      triangle.b.position = new Vector3().fromBufferAttribute(position, i + 1);
-      triangle.c.position = new Vector3().fromBufferAttribute(position, i + 2);
-      triangle.a.normal = new Vector3().fromBufferAttribute(normal, i);
-      triangle.b.normal = new Vector3().fromBufferAttribute(normal, i + 1);
-      triangle.c.normal = new Vector3().fromBufferAttribute(normal, i + 2);
-      triangle.a.uv = new Vector2().fromBufferAttribute(uv, i);
-      triangle.b.uv = new Vector2().fromBufferAttribute(uv, i + 1);
-      triangle.c.uv = new Vector2().fromBufferAttribute(uv, i + 2);
+      triangle.a.position = new Vector3().fromBufferAttribute(position, index_a);
+      triangle.b.position = new Vector3().fromBufferAttribute(position, index_b);
+      triangle.c.position = new Vector3().fromBufferAttribute(position, index_c);
+      triangle.a.normal = new Vector3().fromBufferAttribute(normal, index_a);
+      triangle.b.normal = new Vector3().fromBufferAttribute(normal, index_b);
+      triangle.c.normal = new Vector3().fromBufferAttribute(normal, index_c);
+      triangle.a.uv = new Vector2().fromBufferAttribute(uv, index_a);
+      triangle.b.uv = new Vector2().fromBufferAttribute(uv, index_b);
+      triangle.c.uv = new Vector2().fromBufferAttribute(uv, index_c);
       triangles.push(triangle);
     }
   });

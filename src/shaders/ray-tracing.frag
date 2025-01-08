@@ -2,16 +2,12 @@
 
 precision highp float;
 
-struct Ray {
-  vec3 origin;
-  vec3 direction;
-};
-
-vec3 ray_at(Ray ray, float t) {
-  return ray.origin + t * ray.direction;
-}
-
 uniform sampler2D u_color_texture;
+uniform sampler2D u_positions_texture;
+uniform sampler2D u_normals_texture;
+uniform sampler2D u_uvs_texture;
+uniform int u_texture_width;
+uniform int u_num_triangles;
 uniform int u_sample_count;
 uniform vec3 u_background_color;
 uniform float u_defocus_radius;
@@ -21,6 +17,15 @@ uniform vec3 u_step_y;
 uniform vec3 u_look_from;
 
 out vec4 o_color;
+
+struct Ray {
+  vec3 origin;
+  vec3 direction;
+};
+
+vec3 ray_at(Ray ray, float t) {
+  return ray.origin + t * ray.direction;
+}
 
 // struct HitRecord {
 //   float t;
@@ -119,14 +124,24 @@ bool hit_triangle(vec3 a, vec3 b, vec3 c, Ray ray) {
   return true;
 }
 
+ivec2 get_vertex_coords(int triangle_index, int vertex_index) {
+  int i = (triangle_index * 3 + vertex_index) % u_texture_width;
+  int j = (triangle_index * 3 + vertex_index) / u_texture_width;
+  return ivec2(i, j);
+}
 
 vec3 ray_cast(Ray ray) {
-  vec3 a = vec3(0.0, 0.0, 0.0);
-  vec3 b = vec3(1.0, 0.0, 0.0);
-  vec3 c = vec3(0.0, 1.0, 0.0);
+  for (int t = 0; t < u_num_triangles; ++t) {
+    ivec2 a_coords = get_vertex_coords(t, 0);
+    ivec2 b_coords = get_vertex_coords(t, 1);
+    ivec2 c_coords = get_vertex_coords(t, 2);
+    vec3 a = texelFetch(u_positions_texture, a_coords, 0).xyz;
+    vec3 b = texelFetch(u_positions_texture, b_coords, 0).xyz;
+    vec3 c = texelFetch(u_positions_texture, c_coords, 0).xyz;
 
-  if (hit_triangle(a, b, c, ray)) {
-    return vec3(1.0, 0.0, 0.0);
+    if (hit_triangle(a, b, c, ray)) {
+      return vec3(1.0, 0.0, 0.0);
+    }
   }
 
   return u_background_color;

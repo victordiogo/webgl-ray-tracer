@@ -11,8 +11,8 @@ export async function load_gltf(file_path: string, scale: number = 1): Promise<T
 
   const bounding_box = new Box3().setFromObject(gltf.scene);
 
-  move_to_origin(bounding_box, triangles);
   normalize_and_scale(bounding_box, triangles, scale);
+  move_to_origin(bounding_box, triangles);
 
   return triangles;
 }
