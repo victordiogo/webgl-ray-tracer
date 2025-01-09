@@ -1,4 +1,6 @@
 import { Camera } from "./camera";
+import { Model } from "./model";
+import { Scene } from "./scene";
 import { create_shader_program } from "./shader-program";
 import { SwapFramebuffer } from "./swap-framebuffer";
 
@@ -22,9 +24,9 @@ export class RayTracingRenderer {
     if (!gl) {
       throw new Error('WebGL2 is not supported');
     }
-    // if (!gl.getExtension('EXT_color_buffer_float')) {
-    //   throw new Error('EXT_color_buffer_float is not supported');
-    // }
+    if (!gl.getExtension('EXT_color_buffer_float')) {
+      throw new Error('EXT_color_buffer_float is not supported');
+    }
     this.gl = gl;
     this.gl.viewport(0, 0, width, height);
     this.swap_framebuffer = new SwapFramebuffer(gl, width, height);
@@ -34,24 +36,34 @@ export class RayTracingRenderer {
   }
 
   async compile_shaders() {
-    this.ray_tracing_program = await create_shader_program(this.gl, 'src/ray-tracing.vert', 'src/ray-tracing.frag');
-    this.screen_quad_program = await create_shader_program(this.gl, 'src/screen-quad.vert', 'src/screen-quad.frag');
+    this.screen_quad_program = await create_shader_program(this.gl, './src/shaders/screen-quad.vert', './src/shaders/screen-quad.frag');
+    this.ray_tracing_program = await create_shader_program(this.gl, './src/shaders/ray-tracing.vert', './src/shaders/ray-tracing.frag');
   }
 
-  render(scene_moved: boolean, camera: Camera) {
+  render(scene_moved: boolean, camera: Camera, scene: Scene) {
     if (scene_moved) {
       this.sample_count = 0;
     }
     ++this.sample_count;
 
+    // rt rendering
     this.swap_framebuffer.use();
     this.gl.useProgram(this.ray_tracing_program);
     this.gl.bindVertexArray(this.screen_quad_vao);
-    // rt rendering
+    this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_prev_color'), 0);
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.offscreen_texture);
+    this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_sample_count'), this.sample_count);
+    this.gl.uniform3fv(this.gl.getUniformLocation(this.ray_tracing_program, 'u_background_color'), this.background_color.toArray());
+    camera.set_uniforms(this.ray_tracing_program);
+    scene.set_uniforms(this.ray_tracing_program);
+    this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
+    // screen quad rendering
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     this.gl.useProgram(this.screen_quad_program);
     this.gl.bindVertexArray(this.screen_quad_vao);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.screen_texture);
+    this.gl.uniform1i(this.gl.getUniformLocation(this.screen_quad_program, 'u_sample_count'), this.sample_count);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
 
     this.swap_framebuffer.swap();
@@ -64,27 +76,6 @@ export class RayTracingRenderer {
     this.swap_framebuffer.destroy();
     this.swap_framebuffer = new SwapFramebuffer(this.gl, width, height);
     this.sample_count = 0;
-  }
-
-  get_viewport(camera: Camera) : { width: number, height: number } {
-    const height = 2 * camera.focus_distance * Math.tan(0.5 * camera.vfov * Math.PI / 180);
-    const width = camera.aspect_ratio * height;
-    return { width, height };
-  }
-
-  get_initial_ray_data(camera: Camera, width: number, height: number) : { position: Vector3, step_x: Vector3, step_y: Vector3 } {
-    const [u, v, w] = camera.uvw;
-    const viewport = this.get_viewport(camera);
-    const step_x = u.clone().multiplyScalar(viewport.width / width);
-    const step_y = v.clone().multiplyScalar(viewport.height / height);
-    const position = camera.position.clone()
-      .sub(u.clone().multiplyScalar(0.5 * viewport.width))
-      .sub(v.clone().multiplyScalar(0.5 * viewport.height))
-      .sub(w.clone().multiplyScalar(camera.focus_distance))
-      .add(step_x.clone().multiplyScalar(0.5))
-      .add(step_y.clone().multiplyScalar(0.5));
-
-    return { position, step_x, step_y };
   }
 
   create_screen_quad(gl: WebGL2RenderingContext): WebGLVertexArrayObject {

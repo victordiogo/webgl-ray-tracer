@@ -1,15 +1,21 @@
 #version 300 es
 
 precision highp float;
+precision highp int;
 
-uniform sampler2D u_color_texture;
-uniform sampler2D u_positions_texture;
-uniform sampler2D u_normals_texture;
-uniform sampler2D u_uvs_texture;
-uniform int u_texture_width;
-uniform int u_num_triangles;
+// renderer
+uniform sampler2D u_prev_color;
 uniform int u_sample_count;
 uniform vec3 u_background_color;
+// scene
+uniform sampler2D u_positions;
+uniform sampler2D u_normals;
+uniform sampler2D u_uvs;
+uniform sampler2D u_materials;
+uniform sampler2D u_textures[16];
+uniform int u_positions_width;
+uniform int u_materials_width;
+// camera
 uniform float u_defocus_radius;
 uniform vec3 u_initial_position;
 uniform vec3 u_step_x;
@@ -27,49 +33,7 @@ vec3 ray_at(Ray ray, float t) {
   return ray.origin + t * ray.direction;
 }
 
-// struct HitRecord {
-//   float t;
-//   vec3 p;
-//   vec3 normal;
-// };
-
-// float g_no_hit = 1e9;
-
-// HitRecord trace(Ray ray) {
-//   HitRecord closest_hit;
-//   closest_hit.t = g_no_hit;
-
-//   for (int i = 0; i < 100000; ++i) {
-//     Triangle triangle = u_triangles[i];
-//     vec3 e1 = triangle.b - triangle.a;
-//     vec3 e2 = triangle.c - triangle.a;
-//     vec3 normal = cross(e1, e2);
-//     float denominator = dot(normal, ray.direction);
-//     if (abs(denominator) < 1e-6) {
-//       continue;
-//     }
-//     float t = dot(normal, triangle.a - ray.origin) / denominator;
-//     if (t < 0.0 || t > closest_hit.t) {
-//       continue;
-//     }
-//     vec3 p = ray_at(ray, t);
-//     vec3 c = p - triangle.a;
-//     float u = dot(cross(ray.direction, e2), c) / dot(normal, cross(e1, e2));
-//     if (u < 0.0 || u > 1.0) {
-//       continue;
-//     }
-//     float v = dot(cross(e1, ray.direction), c) / dot(normal, cross(e1, e2));
-//     if (v < 0.0 || u + v > 1.0) {
-//       continue;
-//     }
-//     closest_hit.t = t;
-//     closest_hit.p = p;
-//     closest_hit.normal = normal;
-//     closest_hit.material = triangle.material;
-//   }
-
-//   return closest_hit;
-// }
+float g_max_float = 3.402823466e+38;
 
 // struct ScatterData {
 //   vec3 attenuation;
@@ -93,7 +57,35 @@ vec3 ray_at(Ray ray, float t) {
 //   return ScatterData(vec3(0.5, 0.5, 0.5), scattered);
 // }
 
-bool hit_triangle(vec3 a, vec3 b, vec3 c, Ray ray) {
+struct HitRecord {
+  float t;
+  vec3 point;
+  vec3 normal;
+  vec2 uv;
+  int material;
+};
+
+ivec2 get_position_coords(int triangle_index, int vertex_index) {
+  int i = (triangle_index * 3 + vertex_index) % u_positions_width;
+  int j = (triangle_index * 3 + vertex_index) / u_positions_width;
+  return ivec2(i, j);
+}
+
+ivec2 get_material_coords(int triangle_index) {
+  int i = triangle_index % u_materials_width;
+  int j = triangle_index / u_materials_width;
+  return ivec2(i, j);
+}
+
+bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_distance, out HitRecord hit_record) {
+  ivec2 a_pos_coords = get_position_coords(triangle_index, 0);
+  ivec2 b_pos_coords = get_position_coords(triangle_index, 1);
+  ivec2 c_pos_coords = get_position_coords(triangle_index, 2);
+  
+  vec3 a = texelFetch(u_positions, a_pos_coords, 0).xyz;
+  vec3 b = texelFetch(u_positions, b_pos_coords, 0).xyz;
+  vec3 c = texelFetch(u_positions, c_pos_coords, 0).xyz;
+
   vec3 ab = b - a;
   vec3 ac = c - a;
 
@@ -117,50 +109,73 @@ bool hit_triangle(vec3 a, vec3 b, vec3 c, Ray ray) {
   }
 
   float t = dot(abxac, ao) / det;
-  if (t < 0.0) {
+  if (t < min_distance || t > max_distance) {
     return false;
   }
+
+  vec2 a_uv = texelFetch(u_uvs, a_pos_coords, 0).xy;
+  vec2 b_uv = texelFetch(u_uvs, b_pos_coords, 0).xy;
+  vec2 c_uv = texelFetch(u_uvs, c_pos_coords, 0).xy;
+
+  vec3 a_normal = texelFetch(u_normals, a_pos_coords, 0).xyz;
+  vec3 b_normal = texelFetch(u_normals, b_pos_coords, 0).xyz;
+  vec3 c_normal = texelFetch(u_normals, c_pos_coords, 0).xyz;
+
+  ivec2 material_coords = get_material_coords(triangle_index);
+  int material = int(texelFetch(u_materials, material_coords, 0).x);
+
+  float w = 1.0 - u - v;
+
+  hit_record.t = t;
+  hit_record.point = ray_at(ray, t);
+  hit_record.normal = normalize(w * a_normal + u * b_normal + v * c_normal);
+  hit_record.uv = w * a_uv + u * b_uv + v * c_uv;
+  hit_record.uv.y = 1.0 - hit_record.uv.y;
+  hit_record.material = material;
 
   return true;
 }
 
-ivec2 get_vertex_coords(int triangle_index, int vertex_index) {
-  int i = (triangle_index * 3 + vertex_index) % u_texture_width;
-  int j = (triangle_index * 3 + vertex_index) / u_texture_width;
-  return ivec2(i, j);
-}
+bool trace(Ray ray, out HitRecord hit_record) {
+  hit_record.t = g_max_float;
+  bool hit_anything = false;
 
-vec3 ray_cast(Ray ray) {
-  for (int t = 0; t < u_num_triangles; ++t) {
-    ivec2 a_coords = get_vertex_coords(t, 0);
-    ivec2 b_coords = get_vertex_coords(t, 1);
-    ivec2 c_coords = get_vertex_coords(t, 2);
-    vec3 a = texelFetch(u_positions_texture, a_coords, 0).xyz;
-    vec3 b = texelFetch(u_positions_texture, b_coords, 0).xyz;
-    vec3 c = texelFetch(u_positions_texture, c_coords, 0).xyz;
-
-    if (hit_triangle(a, b, c, ray)) {
-      return vec3(1.0, 0.0, 0.0);
+  for (int i = 0; i < u_materials_width; ++i) {
+    HitRecord temp_record;
+    if (hit_triangle(i, ray, 0.0, hit_record.t, temp_record)) {
+      hit_anything = true;
+      hit_record = temp_record;
     }
   }
 
-  return u_background_color;
-  // vec3 color = vec3(1.0, 1.0, 1.0);
+  return hit_anything;
+}
 
-  // for (int depth = 0; depth < 10; ++depth) {
-  //   HitRecord closest_hit = trace(ray);
+vec3 ray_cast(Ray ray) {
+  vec3 color = vec3(1.0, 1.0, 1.0);
 
-  //   if (closest_hit.t == g_no_hit) {
-  //     return u_background_color;
-  //   }
+  for (int depth = 0; depth < 1; ++depth) {
+    HitRecord hit_record;
 
-  //   ScatterData scatter_data = scatter_lambertian(closest_hit.normal);
-  //   color *= scatter_data.attenuation;
+    if (!trace(ray, hit_record)) {
+      color = u_background_color;
+      break;
+    }
 
-  //   ray = scatter_data.scattered;
-  // }
+    if (hit_record.material == 0) {
+      color *= texture(u_textures[0], hit_record.uv).xyz;
+    }
+    if (hit_record.material == 1) {
+      color *= texture(u_textures[1], hit_record.uv).xyz;
+    }
 
-  // return color;
+    //   ScatterData scatter_data = scatter_lambertian(closest_hit.normal);
+    //   color *= scatter_data.attenuation;
+
+    //   ray = scatter_data.scattered;
+  }
+
+  return color;
 }
 
 void main() {
@@ -172,7 +187,7 @@ void main() {
     o_color = vec4(0.0, 0.0, 0.0, 1.0);
   }
   else {
-    o_color = texelFetch(u_color_texture, ivec2(gl_FragCoord.xy), 0);
+    o_color = texelFetch(u_prev_color, ivec2(gl_FragCoord.xy), 0);
   }
 
   o_color += vec4(color, 1.0);
