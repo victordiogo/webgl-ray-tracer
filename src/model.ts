@@ -18,7 +18,7 @@ export class Model {
   materials: Material[] = [];
   textures: Texture[] = [];
 
-  static async from_obj(obj_dir: string, file_name: string) : Promise<Model> {
+  static async import_obj(obj_dir: string, file_name: string) : Promise<Model> {
     const obj_path = obj_dir + file_name;
     const file = (await load_text_file(obj_path)).split("\n");
     const model = new Model();

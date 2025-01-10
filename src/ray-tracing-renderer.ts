@@ -15,8 +15,9 @@ export class RayTracingRenderer {
   screen_quad_vao: WebGLVertexArrayObject;
   background_color: Vector3;
   sample_count: number;
+  max_depth: number;
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, max_depth: number) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = width;
     this.canvas.height = height;
@@ -33,6 +34,7 @@ export class RayTracingRenderer {
     this.screen_quad_vao = this.create_screen_quad(gl);
     this.background_color = new Vector3(0.5, 0.7, 1.0);
     this.sample_count = 0;
+    this.max_depth = max_depth;
   }
 
   async compile_shaders() {
@@ -49,21 +51,24 @@ export class RayTracingRenderer {
     // rt rendering
     this.swap_framebuffer.use();
     this.gl.useProgram(this.ray_tracing_program);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_prev_color'), 0);
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.offscreen_texture);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_sample_count'), this.sample_count);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_max_depth'), this.max_depth);
+      this.gl.uniform3fv(this.gl.getUniformLocation(this.ray_tracing_program, 'u_background_color'), this.background_color.toArray());
+      camera.use(this.ray_tracing_program);
+      scene.use(this.ray_tracing_program);
     this.gl.bindVertexArray(this.screen_quad_vao);
-    this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_prev_color'), 0);
-    this.gl.activeTexture(this.gl.TEXTURE0);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.offscreen_texture);
-    this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_sample_count'), this.sample_count);
-    this.gl.uniform3fv(this.gl.getUniformLocation(this.ray_tracing_program, 'u_background_color'), this.background_color.toArray());
-    camera.set_uniforms(this.ray_tracing_program);
-    scene.set_uniforms(this.ray_tracing_program);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
     // screen quad rendering
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     this.gl.useProgram(this.screen_quad_program);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.screen_quad_program, 'u_render'), 0);
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.screen_texture);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.screen_quad_program, 'u_sample_count'), this.sample_count);
     this.gl.bindVertexArray(this.screen_quad_vao);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.screen_texture);
-    this.gl.uniform1i(this.gl.getUniformLocation(this.screen_quad_program, 'u_sample_count'), this.sample_count);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
 
     this.swap_framebuffer.swap();

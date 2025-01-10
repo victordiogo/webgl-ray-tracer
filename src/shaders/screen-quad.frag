@@ -2,12 +2,16 @@
 
 precision highp float;
 
-uniform sampler2D u_texture;
+uniform sampler2D u_render;
 uniform int u_sample_count;
 
 out vec4 o_color;
 
+vec3 gamma_correct(vec3 color) {
+  return pow(color, vec3(1.0 / 2.2));
+}
+
 void main() {
-  vec3 color = texelFetch(u_texture, ivec2(gl_FragCoord.xy), 0).rgb;
-  o_color = vec4(color / float(u_sample_count), 1.0);
+  vec3 color = texelFetch(u_render, ivec2(gl_FragCoord.xy), 0).rgb / float(u_sample_count);
+  o_color = vec4(gamma_correct(color), 1.0);
 }
