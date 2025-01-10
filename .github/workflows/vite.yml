@@ -27,7 +27,9 @@ jobs:
       run: |
         npm install
         npx vite build
+        rm index.html
         cp -r dist/* .
+        ls -la
 
   deploy:
     environment:
