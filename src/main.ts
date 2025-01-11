@@ -12,7 +12,7 @@ async function main() {
   const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 60, 45, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.0, 0.1);
+  const camera = new Camera(renderer.gl, 60, 45, 1, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.0, 0.1);
   
   const model = await Model.import_obj('assets/models/car/', 'car.obj');
   console.log(model);

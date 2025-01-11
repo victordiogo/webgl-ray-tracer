@@ -26,10 +26,9 @@ uniform vec3 u_look_from;
 out vec4 o_color;
 
 float g_max_float = 3.402823466e+38;
-uint g_rng_state = 0u;
+uint g_rng_state;
 
-uint jenkins_hash(uint i) {
-  uint x = i;
+uint jenkins_hash(uint x) {
   x += x << 10u;
   x ^= x >> 6u;
   x += x << 3u;
@@ -39,27 +38,29 @@ uint jenkins_hash(uint i) {
 }
 
 void init_rng() {
-  uint seed = (uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * uint(u_num_triangles)) ^ jenkins_hash(uint(u_sample_count));
+  uint seed = (uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * uint(textureSize(u_prev_color, 0).x)) ^ jenkins_hash(uint(u_sample_count));
   g_rng_state = jenkins_hash(seed);
 }
 
 uint xorshift() {
-  uint x = g_rng_state;
-  x ^= x << 13u;
-  x ^= x >> 17u;
-  x ^= x << 5u;
-  g_rng_state = x;
-  return x;
+  g_rng_state ^= g_rng_state << 13u;
+  g_rng_state ^= g_rng_state >> 17u;
+  g_rng_state ^= g_rng_state << 5u;
+  return g_rng_state;
+}
+
+float uint_to_float(uint x) {
+  return intBitsToFloat(int(0x3f800000u | (x >> 9u))) - 1.0;
 }
 
 // returns a random float in the range [0, 1)
 float rand() {
-  return intBitsToFloat(int(0x3f800000u | (xorshift() >> 9u))) - 1.0;
+  return uint_to_float(xorshift());
 }
 
 vec3 random_unit_vector() {
-  float z = 2.0 * rand() - 1.0;
-  float a = 2.0 * 3.14159265358979323846 * rand();
+  float z = 1.0 - 2.0 * rand();
+  float a = 2.0 * 3.1415926535897932385 * rand();
   float r = sqrt(1.0 - z * z);
   return vec3(r * cos(a), r * sin(a), z);
 }
@@ -171,16 +172,16 @@ struct SurfaceData {
 };
 
 bool near_zero(vec3 v) {
-  const float s = 1e-8;
+  const float s = 1e-7;
   return (abs(v.x) < s) && (abs(v.y) < s) && (abs(v.z) < s);
 }
 
 ScatterData scatter_lambertian(SurfaceData surface_data) {
-  vec3 normal = surface_data.normal + random_unit_vector();
-  while (near_zero(normal)) {
-    normal = surface_data.normal + random_unit_vector();
+  vec3 direction = surface_data.normal + random_unit_vector();
+  while (near_zero(direction)) {
+    direction = surface_data.normal + random_unit_vector();
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * 0.0001, normal);
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 0.001, direction);
   vec3 attenuation;
   if (surface_data.material.texture_index == 0) {
     attenuation = texture(u_textures[0], surface_data.uv).xyz;
