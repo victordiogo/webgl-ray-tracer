@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: |
           npm install
-          npx vite build
+          npx vite build --base=/webgl-ray-tracer/
           cp -r assets dist
           mkdir dist/src
           cp -r src/shaders dist/src
