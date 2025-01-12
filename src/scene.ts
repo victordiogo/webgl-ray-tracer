@@ -1,4 +1,7 @@
+import { Bvh } from "./bvh";
 import { Material, Model } from "./model";
+
+import { Vector4 } from "three";
 
 export class Scene {
   models: Model[] = [];
@@ -6,9 +9,11 @@ export class Scene {
   positions: WebGLTexture; 
   normals: WebGLTexture;
   uvs: WebGLTexture;
+  indices: WebGLTexture;
   materials: WebGLTexture;
+  bvh: WebGLTexture;
   textures: WebGLTexture[] = [];
-  num_triangles: number;
+  bvh_length: number;
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl
@@ -22,6 +27,13 @@ export class Scene {
     const merged = new Model();
 
     for (const model of this.models) {
+      model.indices.forEach(i => {
+        const pos_index = i.x + merged.positions.length;
+        const uv_index = i.y + merged.uvs.length;
+        const normal_index = i.z + merged.normals.length;
+        const material_index = i.w + merged.materials.length;
+        merged.indices.push(new Vector4(pos_index, uv_index, normal_index, material_index));
+      });
       model.positions.forEach(p => {
         merged.positions.push(p.clone());
       });
@@ -32,7 +44,11 @@ export class Scene {
         merged.uvs.push(uv.clone())
       });
       model.materials.forEach(m => {
-        merged.materials.push(new Material(merged.textures.length + m.texture_index))
+        let tex_index = m.texture_index;
+        if (tex_index !== -1) {
+          tex_index += merged.textures.length;
+        }
+        merged.materials.push(new Material(tex_index, m.albedo));
       });
       merged.textures.push(...model.textures);
     }
@@ -42,14 +58,15 @@ export class Scene {
   
   update() {
     const merged = this.merge_models();
+    const bvh = new Bvh(merged);
+    console.log(bvh);
 
-    this.num_triangles = merged.positions.length / 3;
-
-    const positions_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.positions.length);
-    const positions_height = Math.ceil(merged.positions.length / positions_width);
-
+    this.bvh_length = bvh.list.length;
+    
     this.positions = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.positions);
+    const positions_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.positions.length);
+    const positions_height = Math.ceil(merged.positions.length / positions_width);
     let data = new Float32Array(positions_width * positions_height * 3);
     merged.positions.forEach((p, i) => data.set(p.toArray(), i * 3));
     this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, positions_width, positions_height, 0, this.gl.RGB, this.gl.FLOAT, data);
@@ -58,28 +75,53 @@ export class Scene {
     
     this.normals = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.normals);
-    data = new Float32Array(positions_width * positions_height * 3);
+    const normals_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.normals.length);
+    const normals_height = Math.ceil(merged.normals.length / normals_width);
+    data = new Float32Array(normals_width * normals_height * 3);
     merged.normals.forEach((n, i) => data.set(n.toArray(), i * 3));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, positions_width, positions_height, 0, this.gl.RGB, this.gl.FLOAT, data);
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, normals_width, normals_height, 0, this.gl.RGB, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
 
     this.uvs = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.uvs);
-    data = new Float32Array(positions_width * positions_height * 2);
+    const uvs_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.uvs.length);
+    const uvs_height = Math.ceil(merged.uvs.length / uvs_width);
+    data = new Float32Array(uvs_width * uvs_height * 2);
     merged.uvs.forEach((uv, i) => data.set(uv.toArray(), i * 2));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RG32F, positions_width, positions_height, 0, this.gl.RG, this.gl.FLOAT, data);
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RG32F, uvs_width, uvs_height, 0, this.gl.RG, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
 
-    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length);
-    const materials_height = Math.ceil(merged.materials.length / materials_width);
-
+    this.indices = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
+    const indices_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.indices.length);
+    const indices_height = Math.ceil(merged.indices.length / indices_width);
+    data = new Float32Array(indices_width * indices_height * 4);
+    merged.indices.forEach((i, j) => data.set(i.toArray(), j * 4));
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, indices_width, indices_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+    
     this.materials = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
-    data = new Float32Array(materials_width * materials_height);
-    merged.materials.forEach((m, i) => data[i] = m.texture_index);
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.R32F, materials_width, materials_height, 0, this.gl.RED, this.gl.FLOAT, data);
+    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length);
+    const materials_height = Math.ceil(merged.materials.length / materials_width);
+    data = new Float32Array(materials_width * materials_height * 4);
+    merged.materials.forEach((m, i) => data.set([m.texture_index, ...m.albedo], i * 4));
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, materials_width, materials_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+
+    this.bvh = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
+    const bvh_width = Math.min(this.gl.MAX_TEXTURE_SIZE, bvh.list.length * 3);
+    const bvh_height = Math.ceil(bvh.list.length * 3 / bvh_width);
+    data = new Float32Array(bvh_width * bvh_height * 3);
+    bvh.list.forEach((node, i) => {
+      data.set([node.left_index, node.right_index, node.triangle_index, ...node.aabb.to_array()], i * 9);
+    });
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, bvh_width, bvh_height, 0, this.gl.RGB, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
 
@@ -103,13 +145,21 @@ export class Scene {
     this.gl.activeTexture(this.gl.TEXTURE4);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
 
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_indices"), 5);
+    this.gl.activeTexture(this.gl.TEXTURE5);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
+
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvhh"), 6);
+    this.gl.activeTexture(this.gl.TEXTURE6);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
+
     this.textures.forEach((t, i) => {
-      this.gl.uniform1i(this.gl.getUniformLocation(program, `u_textures[${i}]`), 5 + i)
-      this.gl.activeTexture(this.gl.TEXTURE5 + i);
+      this.gl.uniform1i(this.gl.getUniformLocation(program, `u_textures[${i}]`), 7 + i)
+      this.gl.activeTexture(this.gl.TEXTURE7 + i);
       this.gl.bindTexture(this.gl.TEXTURE_2D, t);
     });
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_num_triangles"), this.num_triangles);
     this.gl.uniform1i(this.gl.getUniformLocation(program, "u_max_texture_size"), this.gl.MAX_TEXTURE_SIZE);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh_length"), this.bvh_length);
   }
 };

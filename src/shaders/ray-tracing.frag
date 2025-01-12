@@ -1,31 +1,38 @@
 #version 300 es
 
-precision highp float;
 precision highp int;
+precision highp float;
 
 // renderer
-uniform sampler2D u_prev_color;
+uniform highp sampler2D u_prev_color;
 uniform int u_sample_count;
 uniform vec3 u_background_color;
 uniform int u_max_depth;
 // scene
-uniform sampler2D u_positions;
-uniform sampler2D u_normals;
-uniform sampler2D u_uvs;
-uniform sampler2D u_materials;
-uniform sampler2D u_textures[16];
-uniform int u_num_triangles;
+uniform highp sampler2D u_positions;
+uniform highp sampler2D u_normals;
+uniform highp sampler2D u_uvs;
+uniform highp sampler2D u_materials;
+uniform highp sampler2D u_indices;
+uniform highp sampler2D u_bvhh;
+uniform highp sampler2D u_textures[20];
+uniform int u_bvh_length;
 uniform int u_max_texture_size;
 // camera
 uniform float u_defocus_radius;
 uniform vec3 u_initial_position;
 uniform vec3 u_step_x;
 uniform vec3 u_step_y;
+uniform vec3 u_right;
+uniform vec3 u_up;
 uniform vec3 u_look_from;
 
 out vec4 o_color;
 
 float g_max_float = 3.402823466e+38;
+float g_pi = 3.1415926535897932385;
+
+// --> RANDOM NUMBER GENERATOR
 uint g_rng_state;
 
 uint jenkins_hash(uint x) {
@@ -60,11 +67,13 @@ float rand() {
 
 vec3 random_unit_vector() {
   float z = 1.0 - 2.0 * rand();
-  float a = 2.0 * 3.1415926535897932385 * rand();
+  float a = 2.0 * g_pi * rand();
   float r = sqrt(1.0 - z * z);
   return vec3(r * cos(a), r * sin(a), z);
 }
+// <-- RANDOM NUMBER GENERATOR
 
+// --> RAY 
 struct Ray {
   vec3 origin;
   vec3 direction;
@@ -73,36 +82,53 @@ struct Ray {
 vec3 ray_at(Ray ray, float t) {
   return ray.origin + t * ray.direction;
 }
+// <-- RAY
 
 struct HitRecord {
   float t;
   float p;
   float q;
-  int triangle_index;
+  int material_index;
+  ivec3 uv_index;
+  ivec3 normal_index;
 };
 
-ivec2 get_vertex_coords(int triangle_index, int vertex_index) {
-  int i = (triangle_index * 3 + vertex_index) % u_max_texture_size;
-  int j = (triangle_index * 3 + vertex_index) / u_max_texture_size;
+ivec2 to_texture_coords(int index) {
+  int i = index % u_max_texture_size;
+  int j = index / u_max_texture_size;
   return ivec2(i, j);
 }
 
-ivec2 get_material_coords(int triangle_index) {
-  int i = triangle_index % u_max_texture_size;
-  int j = triangle_index / u_max_texture_size;
-  return ivec2(i, j);
+ivec4 get_vertex_indices(int triangle_index, int vertex_index) {
+  ivec2 coords = to_texture_coords(triangle_index * 3 + vertex_index);
+  return ivec4(texelFetch(u_indices, coords, 0).xyzw);
+}
+
+vec3 get_position(int index) {
+  ivec2 coords = to_texture_coords(index);
+  return texelFetch(u_positions, coords, 0).xyz;
+}
+
+vec2 get_uv(int index) {
+  ivec2 coords = to_texture_coords(index);
+  return texelFetch(u_uvs, coords, 0).xy;
+}
+
+vec3 get_normal(int index) {
+  ivec2 coords = to_texture_coords(index);
+  return texelFetch(u_normals, coords, 0).xyz;
 }
 
 bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_distance, out HitRecord hit_record) {
   // o + td = a + p * ab + q * ac
 
-  ivec2 a_coords = get_vertex_coords(triangle_index, 0);
-  ivec2 b_coords = get_vertex_coords(triangle_index, 1);
-  ivec2 c_coords = get_vertex_coords(triangle_index, 2);
+  ivec4 a_indices = get_vertex_indices(triangle_index, 0);
+  ivec4 b_indices = get_vertex_indices(triangle_index, 1);
+  ivec4 c_indices = get_vertex_indices(triangle_index, 2);
   
-  vec3 a = texelFetch(u_positions, a_coords, 0).xyz;
-  vec3 b = texelFetch(u_positions, b_coords, 0).xyz;
-  vec3 c = texelFetch(u_positions, c_coords, 0).xyz;
+  vec3 a = get_position(a_indices.x);
+  vec3 b = get_position(b_indices.x);
+  vec3 c = get_position(c_indices.x);
 
   vec3 ab = b - a;
   vec3 ac = c - a;
@@ -134,20 +160,76 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
   hit_record.t = t;
   hit_record.p = p;
   hit_record.q = q;
-  hit_record.triangle_index = triangle_index;
+  hit_record.material_index = a_indices.w;
+  hit_record.uv_index = ivec3(a_indices.y, b_indices.y, c_indices.y);
+  hit_record.normal_index = ivec3(a_indices.z, b_indices.z, c_indices.z);
 
   return true;
 }
 
+struct BvhNode {
+  int left_index;
+  int right_index;
+  int triangle_index;
+  vec2 bounding_box_axes[3];
+};
+
+BvhNode get_bvh_node(int index) {
+  ivec2 coords = to_texture_coords(index * 3 + 0);
+  vec3 data_a = texelFetch(u_bvhh, coords, 0).xyz;
+  coords = to_texture_coords(index * 3 + 1);
+  vec3 data_b = texelFetch(u_bvhh, coords, 0).xyz;
+  coords = to_texture_coords(index * 3 + 2);
+  vec3 data_c = texelFetch(u_bvhh, coords, 0).xyz;
+  return BvhNode(int(data_a.x), int(data_a.y), int(data_a.z), vec2[](data_b.xy, vec2(data_b.z, data_c.x), data_c.yz));
+}
+
+bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_distance) {
+  for (int i = 0; i < 3; ++i) {
+    vec2 axis = node.bounding_box_axes[i];
+    float inv_d = 1.0 / ray.direction[i];
+    float t0 = (axis.x - ray.origin[i]) * inv_d;
+    float t1 = (axis.y - ray.origin[i]) * inv_d;
+    if (inv_d < 0.0) {
+      float temp = t0;
+      t0 = t1;
+      t1 = temp;
+    }
+    min_distance = max(t0, min_distance);
+    max_distance = min(t1, max_distance);
+    if (max_distance <= min_distance) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool trace(Ray ray, out HitRecord hit_record) {
-  hit_record.t = g_max_float;
+  int stack[200];
+  int stack_size = 0;
+  stack[stack_size++] = u_bvh_length - 1;
   bool hit_anything = false;
 
-  for (int i = 0; i < u_num_triangles; ++i) {
-    HitRecord temp_record;
-    if (hit_triangle(i, ray, 0.0, hit_record.t, temp_record)) {
-      hit_anything = true;
-      hit_record = temp_record;
+  hit_record.t = g_max_float;
+
+  while (stack_size > 0) {
+    int node_index = stack[--stack_size];
+    BvhNode node = get_bvh_node(node_index);
+
+    if (!hit_bounding_box(node, ray, 0.0, hit_record.t)) {
+      continue;
+    }
+
+    if (node.triangle_index != -1) {
+      HitRecord temp_record;
+      if (hit_triangle(node.triangle_index, ray, 0.0, hit_record.t, temp_record)) {
+        hit_anything = true;
+        hit_record = temp_record;
+      }
+    }
+    else {
+      stack[stack_size++] = node.right_index;
+      stack[stack_size++] = node.left_index;
     }
   }
 
@@ -159,10 +241,16 @@ struct ScatterData {
   Ray scattered;
 };
 
-
 struct Material {
   int texture_index;
+  vec3 albedo;
 };
+
+Material get_material(int material_index) {
+  ivec2 coords = to_texture_coords(material_index);
+  vec4 mat = texelFetch(u_materials, coords, 0).xyzw;
+  return Material(int(mat.x), mat.yzw);
+}
 
 struct SurfaceData {
   vec3 point;
@@ -183,11 +271,68 @@ ScatterData scatter_lambertian(SurfaceData surface_data) {
   }
   Ray scattered = Ray(surface_data.point + surface_data.normal * 0.001, direction);
   vec3 attenuation;
+  if (surface_data.material.texture_index == -1) {
+    attenuation = surface_data.material.albedo;
+  }
   if (surface_data.material.texture_index == 0) {
     attenuation = texture(u_textures[0], surface_data.uv).xyz;
   }
   if (surface_data.material.texture_index == 1) {
     attenuation = texture(u_textures[1], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 2) {
+    attenuation = texture(u_textures[2], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 3) {
+    attenuation = texture(u_textures[3], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 4) {
+    attenuation = texture(u_textures[4], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 5) {
+    attenuation = texture(u_textures[5], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 6) {
+    attenuation = texture(u_textures[6], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 7) {
+    attenuation = texture(u_textures[7], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 8) {
+    attenuation = texture(u_textures[8], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 9) {
+    attenuation = texture(u_textures[9], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 10) {
+    attenuation = texture(u_textures[10], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 11) {
+    attenuation = texture(u_textures[11], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 12) {
+    attenuation = texture(u_textures[12], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 13) {
+    attenuation = texture(u_textures[13], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 14) {
+    attenuation = texture(u_textures[14], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 15) {
+    attenuation = texture(u_textures[15], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 16) {
+    attenuation = texture(u_textures[16], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 17) {
+    attenuation = texture(u_textures[17], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 18) {
+    attenuation = texture(u_textures[18], surface_data.uv).xyz;
+  }
+  if (surface_data.material.texture_index == 19) {
+    attenuation = texture(u_textures[19], surface_data.uv).xyz;
   }
   return ScatterData(attenuation, scattered);
 }
@@ -195,27 +340,20 @@ ScatterData scatter_lambertian(SurfaceData surface_data) {
 SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   SurfaceData data;
 
-  ivec2 a_coords = get_vertex_coords(hit_record.triangle_index, 0);
-  ivec2 b_coords = get_vertex_coords(hit_record.triangle_index, 1);
-  ivec2 c_coords = get_vertex_coords(hit_record.triangle_index, 2);
+  vec2 a_uv = get_uv(hit_record.uv_index.x);
+  vec2 b_uv = get_uv(hit_record.uv_index.y);
+  vec2 c_uv = get_uv(hit_record.uv_index.z);
 
-  vec2 a_uv = texelFetch(u_uvs, a_coords, 0).xy;
-  vec2 b_uv = texelFetch(u_uvs, b_coords, 0).xy;
-  vec2 c_uv = texelFetch(u_uvs, c_coords, 0).xy;
-
-  vec3 a_normal = texelFetch(u_normals, a_coords, 0).xyz;
-  vec3 b_normal = texelFetch(u_normals, b_coords, 0).xyz;
-  vec3 c_normal = texelFetch(u_normals, c_coords, 0).xyz;
-
-  ivec2 material_coords = get_material_coords(hit_record.triangle_index);
-  int texture_index = int(texelFetch(u_materials, material_coords, 0).x);
+  vec3 a_normal = get_normal(hit_record.normal_index.x);
+  vec3 b_normal = get_normal(hit_record.normal_index.y);
+  vec3 c_normal = get_normal(hit_record.normal_index.z);
 
   float r = 1.0 - hit_record.p - hit_record.q;
 
   data.point = ray_at(ray, hit_record.t);
   data.normal = normalize(r * a_normal + hit_record.p * b_normal + hit_record.q * c_normal);
   data.uv = r * a_uv + hit_record.p * b_uv + hit_record.q * c_uv;
-  data.material = Material(texture_index);
+  data.material = get_material(hit_record.material_index);
 
   return data;
 }
@@ -249,8 +387,15 @@ vec3 cast_ray(Ray ray) {
 void main() {
   init_rng();
 
+  float r = sqrt(rand());
+  float theta = 2.0 * g_pi * rand();
+  vec3 radial_offset = u_defocus_radius * r * (cos(theta) * u_right + sin(theta) * u_up);
+
+  vec3 pos_offset = (rand() - 0.5) * u_step_x + (rand() - 0.5) * u_step_y;
+
   vec3 position = u_initial_position + gl_FragCoord.x * u_step_x + gl_FragCoord.y * u_step_y;
-  Ray ray = Ray(u_look_from, position - u_look_from);
+  vec3 origin = u_look_from + radial_offset;
+  Ray ray = Ray(origin, position + pos_offset - origin);
   vec3 color = cast_ray(ray);
 
   if (u_sample_count == 1) {

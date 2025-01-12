@@ -1,8 +1,9 @@
 #version 300 es
 
+precision highp int;
 precision highp float;
 
-uniform sampler2D u_render;
+uniform highp sampler2D u_render;
 uniform int u_sample_count;
 
 out vec4 o_color;

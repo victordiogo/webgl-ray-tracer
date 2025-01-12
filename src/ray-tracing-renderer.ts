@@ -28,6 +28,9 @@ export class RayTracingRenderer {
     if (!gl.getExtension('EXT_color_buffer_float')) {
       throw new Error('EXT_color_buffer_float is not supported');
     }
+    if (!gl.getExtension('OES_texture_float_linear')) {
+      throw new Error('OES_texture_float_linear is not supported');
+    }
     this.gl = gl;
     this.gl.viewport(0, 0, width, height);
     this.swap_framebuffer = new SwapFramebuffer(gl, width, height);

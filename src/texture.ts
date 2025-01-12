@@ -2,13 +2,11 @@ export class Texture {
   width: number;
   height: number;
   data: Uint8ClampedArray;
-  index: number;
 
-  constructor(width: number, height: number, data: Uint8ClampedArray, index: number = 0) {
+  constructor(width: number, height: number, data: Uint8ClampedArray) {
     this.width = width;
     this.height = height;
     this.data = data;
-    this.index = index;
   }
 
   static async from_image(path: string) : Promise<Texture> {

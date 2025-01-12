@@ -68,6 +68,9 @@ export class Camera {
   }
 
   use(program: WebGLProgram) {
+    const [u, v] = this.uvw;
+    this.gl.uniform3fv(this.gl.getUniformLocation(program, 'u_right'), u.toArray());
+    this.gl.uniform3fv(this.gl.getUniformLocation(program, 'u_up'), v.toArray());
     this.gl.uniform1f(this.gl.getUniformLocation(program, 'u_defocus_radius'), this.defocus_radius);
     this.gl.uniform3fv(this.gl.getUniformLocation(program, 'u_initial_position'), this.initial_ray_data.position.toArray());
     this.gl.uniform3fv(this.gl.getUniformLocation(program, 'u_step_x'), this.initial_ray_data.step_x.toArray());

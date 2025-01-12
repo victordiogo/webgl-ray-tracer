@@ -1,13 +1,15 @@
 import { load_text_file } from "./load-text-file";
 import { Texture } from "./texture";
 
-import { Vector2, Vector3 } from "three";
+import { Vector2, Vector3, Vector4 } from "three";
 
 export class Material {
   texture_index: number;
+  albedo: Vector3;
 
-  constructor(texture_index: number = -1) {
+  constructor(texture_index: number = -1, albedo: Vector3 = new Vector3(1, 1, 1)) {
     this.texture_index = texture_index;
+    this.albedo = albedo;
   }
 };
 
@@ -16,41 +18,38 @@ export class Model {
   normals: Vector3[] = [];
   uvs: Vector2[] = [];
   materials: Material[] = [];
+  indices: Vector4[] = []; // x: position, y: uv, z: normal, w: material
   textures: Texture[] = [];
 
   static async import_obj(obj_dir: string, file_name: string) : Promise<Model> {
     const obj_path = obj_dir + file_name;
     const file = (await load_text_file(obj_path)).split("\n");
     const model = new Model();
-    const positions: Vector3[] = [];
-    const normals: Vector3[] = [];
-    const uvs: Vector2[] = [];
     const materials: Map<string, Material> = new Map();
-    const textures: Map<string, Texture> = new Map();
-    let current_material: Material | null = null;
+    const textures: Map<string, number> = new Map();
     
     for (let i = 0; i < file.length; ++i) {
       const line = file[i];
       const tokens = line.split(" ");
       if (tokens[0] === "mtllib") {
-        await Model.import_materials(obj_dir, tokens[1], materials, textures);
+        await Model.import_materials(obj_dir, tokens[1], model, materials, textures);
       }
       else if (tokens[0] === "v") {
-        positions.push(new Vector3(
+        model.positions.push(new Vector3(
           parseFloat(tokens[1]),
           parseFloat(tokens[2]),
           parseFloat(tokens[3])
         ));
       } 
       else if (tokens[0] === "vn") {
-        normals.push(new Vector3(
+        model.normals.push(new Vector3(
           parseFloat(tokens[1]),
           parseFloat(tokens[2]),
           parseFloat(tokens[3])
         ));
       } 
       else if (tokens[0] === "vt") {
-        uvs.push(new Vector2(
+        model.uvs.push(new Vector2(
           parseFloat(tokens[1]),
           parseFloat(tokens[2])
         ));
@@ -58,52 +57,35 @@ export class Model {
       else if (tokens[0] === "usemtl") {
         const material = materials.get(tokens[1]);
         if (!material) {
-          throw new Error("Material not found");
+          throw new Error("Material must be defined before usemtl");
         }
-        current_material = material;
+        model.materials.push(new Material(material.texture_index, material.albedo));
       }
       else if (tokens[0] === "f") {
-        if (!current_material) {
-          throw new Error("Material not set for face");
+        if (model.materials.length === 0) {
+          throw new Error("usemtl must be defined before faces");
         }
-        class Vertex {
-          position: number;
-          uv: number;
-          normal: number;
-        }
-        let vertices: Vertex[] = [];
+        const vertices: Vector4[] = [];
         for (let j = 1; j < tokens.length; ++j) {
-          const vertex_i = tokens[j].split("/");
-          const vertex = new Vertex();
-          vertex.position = parseInt(vertex_i[0]) - 1;
-          vertex.uv = parseInt(vertex_i[1]) - 1;
-          vertex.normal = parseInt(vertex_i[2]) - 1;
+          const vertex_arr = tokens[j].split("/");
+          const vertex = new Vector4();
+          vertex.x = parseInt(vertex_arr[0]) - 1; // position
+          vertex.y = parseInt(vertex_arr[1]) - 1; // uv
+          vertex.z = parseInt(vertex_arr[2]) - 1; // normal
+          vertex.w = model.materials.length - 1;  // material
           vertices.push(vertex);
         }
         for (let j = 1; j < vertices.length - 1; ++j) {
-          const a = vertices[0];
-          const b = vertices[j];
-          const c = vertices[j + 1];
-          model.positions.push(positions[a.position].clone());
-          model.positions.push(positions[b.position].clone());
-          model.positions.push(positions[c.position].clone());
-          model.normals.push(normals[a.normal].clone());
-          model.normals.push(normals[b.normal].clone());
-          model.normals.push(normals[c.normal].clone());
-          model.uvs.push(uvs[a.uv].clone());
-          model.uvs.push(uvs[b.uv].clone());
-          model.uvs.push(uvs[c.uv].clone());
-          model.materials.push(current_material);
+          const a = vertices[0].clone();
+          const b = vertices[j].clone();
+          const c = vertices[j + 1].clone();
+          model.indices.push(a, b, c);
         }
       }
     }
 
-    for (const texture of textures.values()) {
-      model.textures[texture.index] = texture;
-    }
-
-    let min = new Vector3(Infinity, Infinity, Infinity);
-    let max = new Vector3(-Infinity, -Infinity, -Infinity);
+    const min = new Vector3(Infinity, Infinity, Infinity);
+    const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (const position of model.positions) {
       min.x = Math.min(min.x, position.x);
       min.y = Math.min(min.y, position.y);
@@ -122,10 +104,9 @@ export class Model {
     return model;
   }
 
-  static async import_materials(obj_dir: string, file_name: string, o_materials: Map<string, Material>, o_textures: Map<string, Texture>) {
+  static async import_materials(obj_dir: string, file_name: string, o_model: Model, o_materials: Map<string, Material>, o_textures: Map<string, number>) {
     const file = (await load_text_file(obj_dir + file_name)).split("\n");
     let material_name: string | null = null;
-    let texture_path: string | null = null;
 
     for (let i = 0; i < file.length; ++i) {
       const line = file[i];
@@ -135,22 +116,35 @@ export class Model {
         o_materials.set(material_name, new Material());
       }
       else if (tokens[0] === "map_Kd") {
-        texture_path = obj_dir + tokens[1];
-        await Model.import_texture(texture_path, o_textures);
+        const texture_path = obj_dir + tokens[1];
+        await Model.import_texture(texture_path, o_model, o_textures);
+        if (!material_name) {
+          throw new Error("newmtl must be defined before map_Kd");
+        }
+        const material = o_materials.get(material_name)!;
+        material.texture_index = o_textures.get(texture_path)!;
       }
-
-      if (material_name && texture_path) {
-        o_materials.get(material_name)!.texture_index = o_textures.get(texture_path)!.index;
+      else if (tokens[0] === "Kd") {
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Kd");
+        }
+        const material = o_materials.get(material_name)!;
+        material.albedo = new Vector3(
+          parseFloat(tokens[1]),
+          parseFloat(tokens[2]),
+          parseFloat(tokens[3])
+        );
       }
     }
   }
 
-  static async import_texture(texture_path: string, o_textures: Map<string, Texture>) {
+  static async import_texture(texture_path: string, o_model: Model, o_textures: Map<string, number>) {
     if (o_textures.has(texture_path)) {
       return;
     }
     const texture = await Texture.from_image(texture_path);
-    texture.index = o_textures.size;
-    o_textures.set(texture_path, texture);
+    const index = o_model.textures.length;
+    o_model.textures.push(texture);
+    o_textures.set(texture_path, index);
   }
 };
