@@ -69,7 +69,13 @@
     <span id="fps"></span></br>
     <span id="samples"></span></br>
     <span id="focus-distance"></span></br>
-    <span id="defocus-angle"></span>
+    <span id="defocus-angle"></span></br>
+    <span id="model">Model: 
+      <input type="radio" name="model" value="chicken" checked>Chicken
+      <input type="radio" name="model" value="car">Car
+      <input type="radio" name="model" value="man">Man
+      <input type="radio" name="model" value="porsche">Porsche
+    </span>
   </div>
   <button id="menu-button">?</button>
   <div id="menu">
@@ -90,6 +96,8 @@
     menu_button.addEventListener('click', () => {
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     });
+
+    const model = document.querySelector('input[name="model"]:checked').value;
   </script>
   <script type="module" src="src/main.ts"></script>
 </body>

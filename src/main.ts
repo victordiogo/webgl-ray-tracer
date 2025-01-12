@@ -14,16 +14,26 @@ async function main() {
   document.body.appendChild(renderer.canvas);
   const camera = new Camera(renderer.gl, 60, 45, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 0.8, 0);
   
-  const model = await Model.import_obj('assets/models/car/', 'car.obj');
+  let model = await Model.import_obj('assets/models/chicken/', 'chicken.obj');
   console.log(model);
 
-  const scene = new Scene(renderer.gl);
+  let scene = new Scene(renderer.gl);
   scene.add(model);
   scene.update();
 
   const keyboard = new KeyboardState();
 
   addEventListener('resize', () => resize(renderer, camera));
+
+  document.querySelectorAll('input[type="radio"]')!.forEach(el => el.addEventListener('change', async (event) => {
+    const target = event.target as HTMLInputElement;
+    model = await Model.import_obj('assets/models/' + target.value + '/', target.value + '.obj');
+    scene = new Scene(renderer.gl);
+    scene.add(model);
+    scene.update();
+    console.log("triangle count: " + model.indices.length / 3);
+    renderer.sample_count = 0;
+  }));
 
   let last_frame = performance.now();
 
