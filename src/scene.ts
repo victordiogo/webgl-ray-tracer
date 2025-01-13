@@ -115,13 +115,13 @@ export class Scene {
 
     this.bvh = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
-    const bvh_width = Math.min(this.gl.MAX_TEXTURE_SIZE, bvh.list.length * 3);
-    const bvh_height = Math.ceil(bvh.list.length * 3 / bvh_width);
-    data = new Float32Array(bvh_width * bvh_height * 3);
+    const bvh_width = Math.min(this.gl.MAX_TEXTURE_SIZE, bvh.list.length * 2);
+    const bvh_height = Math.ceil(bvh.list.length * 2 / bvh_width);
+    data = new Float32Array(bvh_width * bvh_height * 4);
     bvh.list.forEach((node, i) => {
-      data.set([node.left_index, node.right_index, node.triangle_index, ...node.aabb.to_array()], i * 9);
+      data.set([node.left_index, node.right_index, ...node.aabb.to_array()], i * 8);
     });
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, bvh_width, bvh_height, 0, this.gl.RGB, this.gl.FLOAT, data);
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, bvh_width, bvh_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
 
@@ -149,7 +149,7 @@ export class Scene {
     this.gl.activeTexture(this.gl.TEXTURE5);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvhh"), 6);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh"), 6);
     this.gl.activeTexture(this.gl.TEXTURE6);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
 

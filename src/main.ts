@@ -9,7 +9,7 @@ import { Scene } from './scene.js';
 main();
 
 async function main() {
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 4);
+  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
   const camera = new Camera(renderer.gl, 60, 45, 30, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 10, 0);
@@ -88,13 +88,13 @@ function process_input(keyboard: KeyboardState, renderer: RayTracingRenderer, ca
   }
   if (keyboard.pressed('Q')) {
     camera.radial_distance += 0.01 * frame_time;
-    if (camera.radial_distance < 0.1) {
-      camera.radial_distance = 0.1;
-    }
     renderer.start_sampling();
   }
   if (keyboard.pressed('E')) {
     camera.radial_distance -= 0.01 * frame_time;
+    if (camera.radial_distance < 0.1) {
+      camera.radial_distance = 0.1;
+    }
     renderer.start_sampling();
   }
   if (keyboard.pressed('up')) {

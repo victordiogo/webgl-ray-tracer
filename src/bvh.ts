@@ -73,15 +73,13 @@ class Aabb {
 }
 
 class BvhNode {
-  left_index: number;
+  left_index: number; // negative if leaf
   right_index: number;
-  triangle_index: number; // -1 if not a triangle
   aabb: Aabb;
 
-  constructor(left_index: number, right_index: number, triangle_index: number, aabb: Aabb) {
+  constructor(left_index: number, right_index: number, aabb: Aabb) {
     this.left_index = left_index;
     this.right_index = right_index;
-    this.triangle_index = triangle_index;
     this.aabb = aabb;
   }
 };
@@ -101,7 +99,7 @@ export class Bvh {
       triangles.push({ triangle_index: i, aabb: Aabb.from_triangle(a, b, c) });
     }
     const {left_index, right_index, aabb} = this.build(triangles);
-    this.list.push(new BvhNode(left_index, right_index, -1, aabb));
+    this.list.push(new BvhNode(left_index, right_index, aabb));
   }
 
   build(triangles: Triangles): { left_index: number, right_index: number, aabb: Aabb } {
@@ -109,16 +107,16 @@ export class Bvh {
     
     if (span == 1) {
       const tri = triangles[0];
-      const node = new BvhNode(-1, -1, tri.triangle_index, tri.aabb);
+      const node = new BvhNode(-tri.triangle_index - 1, -tri.triangle_index - 1, tri.aabb);
       this.list.push(node); // left
       this.list.push(node); // right
       return {left_index: this.list.length - 2, right_index: this.list.length - 1, aabb: tri.aabb};
     }
     else if (span == 2) {
       const left_tri = triangles[0];
-      const left = new BvhNode(-1, -1, left_tri.triangle_index, left_tri.aabb);
+      const left = new BvhNode(-left_tri.triangle_index - 1, -left_tri.triangle_index - 1, left_tri.aabb);
       const right_tri = triangles[1];
-      const right = new BvhNode(-1, -1, right_tri.triangle_index, right_tri.aabb);
+      const right = new BvhNode(-right_tri.triangle_index - 1, -right_tri.triangle_index - 1, right_tri.aabb);
       this.list.push(left);
       this.list.push(right);
       return {left_index: this.list.length - 2, right_index: this.list.length - 1, aabb: Aabb.merge(left_tri.aabb, right_tri.aabb)};
@@ -135,12 +133,12 @@ export class Bvh {
     const mid = Math.ceil(span / 2);
 
     const left_data = this.build(triangles.slice(0, mid));
-    const left = new BvhNode(left_data.left_index, left_data.right_index, -1, left_data.aabb);
+    const left = new BvhNode(left_data.left_index, left_data.right_index, left_data.aabb);
     this.list.push(left);
     const left_index = this.list.length - 1;
 
     const right_data = this.build(triangles.slice(mid));
-    const right = new BvhNode(right_data.left_index, right_data.right_index, -1, right_data.aabb);
+    const right = new BvhNode(right_data.left_index, right_data.right_index, right_data.aabb);
     this.list.push(right);
     const right_index = this.list.length - 1;
 
