@@ -45,10 +45,11 @@ export class RayTracingRenderer {
     this.ray_tracing_program = await create_shader_program(this.gl, './src/shaders/ray-tracing.vert', './src/shaders/ray-tracing.frag');
   }
 
-  render(scene_moved: boolean, camera: Camera, scene: Scene) {
-    if (scene_moved) {
-      this.sample_count = 0;
-    }
+  start_sampling() {
+    this.sample_count = 0;
+  }
+
+  render(camera: Camera, scene: Scene) {
     ++this.sample_count;
 
     // rt rendering

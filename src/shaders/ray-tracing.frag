@@ -5,8 +5,8 @@ precision highp float;
 
 // renderer
 uniform highp sampler2D u_prev_color;
-uniform int u_sample_count;
 uniform vec3 u_background_color;
+uniform int u_sample_count;
 uniform int u_max_depth;
 // scene
 uniform highp sampler2D u_positions;
@@ -135,7 +135,7 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 
   vec3 abxac = cross(ab, ac);
   float det = dot(abxac, -ray.direction);
-  if (abs(det) < 1e-6) {
+  if (abs(det) < 1e-10) {
     return false;
   }
 
@@ -205,7 +205,7 @@ bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_dista
 }
 
 bool trace(Ray ray, out HitRecord hit_record) {
-  int stack[200];
+  int stack[32];
   int stack_size = 0;
   stack[stack_size++] = u_bvh_length - 1;
   bool hit_anything = false;
@@ -259,17 +259,16 @@ struct SurfaceData {
   Material material;
 };
 
-bool near_zero(vec3 v) {
-  const float s = 1e-7;
-  return (abs(v.x) < s) && (abs(v.y) < s) && (abs(v.z) < s);
+bool near_zero(vec3 v, float epsilon) {
+  return (abs(v.x) < epsilon) && (abs(v.y) < epsilon) && (abs(v.z) < epsilon);
 }
 
 ScatterData scatter_lambertian(SurfaceData surface_data) {
   vec3 direction = surface_data.normal + random_unit_vector();
-  while (near_zero(direction)) {
+  while (near_zero(direction, 1e-6)) {
     direction = surface_data.normal + random_unit_vector();
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * 0.001, direction);
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-5, direction);
   vec3 attenuation;
   if (surface_data.material.texture_index == -1) {
     attenuation = surface_data.material.albedo;

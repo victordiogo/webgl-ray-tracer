@@ -97,7 +97,14 @@
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     });
 
-    const model = document.querySelector('input[name="model"]:checked').value;
+    document.querySelectorAll('input[name="model"]').forEach((input) => {
+      input.addEventListener('change', (event) => {
+        const model = event.target.value;
+        const obj_dir = "assets/models/" + model + "/";
+        const file_name = model + ".obj";
+        dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
+      });
+    });
   </script>
   <script type="module" src="src/main.ts"></script>
 </body>

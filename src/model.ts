@@ -98,7 +98,7 @@ export class Model {
     const size = max.clone().sub(min);
     const max_size = Math.max(size.x, size.y, size.z);
     for (const position of model.positions) {
-      position.sub(center).divideScalar(max_size);
+      position.sub(center).divideScalar(max_size / 10);
     }
 
     return model;
