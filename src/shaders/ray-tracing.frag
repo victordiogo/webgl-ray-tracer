@@ -368,6 +368,9 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
 
   data.point = ray_at(ray, hit_record.t);
   data.normal = normalize(r * a_normal + hit_record.p * b_normal + hit_record.q * c_normal);
+  if (dot(data.normal, ray.direction) > 0.0) {
+    data.normal = -data.normal;
+  }
   data.uv = r * a_uv + hit_record.p * b_uv + hit_record.q * c_uv;
   data.material = get_material(hit_record.material_index);
 

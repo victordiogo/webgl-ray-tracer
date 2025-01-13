@@ -68,6 +68,7 @@
   <div id="info">
     <span id="fps"></span></br>
     <span id="samples"></span></br>
+    <span id="fov"></span></br>
     <span id="focus-distance"></span></br>
     <span id="defocus-angle"></span></br>
     <span id="model">Model: 
@@ -75,16 +76,18 @@
       <input type="radio" name="model" value="car">Car
       <input type="radio" name="model" value="man">Man
       <input type="radio" name="model" value="porsche">Porsche
+      <input type="radio" name="model" value="sponza">Sponza
     </span>
   </div>
   <button id="menu-button">?</button>
   <div id="menu">
     <h1>Controls</h1>
     <ul>
-      <li>WASD: Rotate camera</li>
-      <li>QE: Ajust radial distance</li>
-      <li>Up/Down: Adjust focus distance</li>
-      <li>Right/Left: Adjust defocus angle</li>
+      <li>Mouse: Rotate camera</li>
+      <li>Scroll: Ajust camera distance</li>
+      <li>W/S: Adjust camera fov</li>
+      <li>A/D: Adjust focus distance</li>
+      <li>Q/E: Adjust defocus angle</li>
     </ul>
   </div>
   <script>
