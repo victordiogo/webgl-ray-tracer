@@ -58,7 +58,7 @@ uint xorshift() {
 }
 
 float uint_to_float(uint x) {
-  return intBitsToFloat(int(0x3f800000u | (x >> 9u))) - 1.0;
+  return uintBitsToFloat(0x3f800000u | (x >> 9u)) - 1.0;
 }
 
 // returns a random float in the range [0, 1)
@@ -136,24 +136,26 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 
   vec3 abxac = cross(ab, ac);
   float det = dot(abxac, -ray.direction);
-  if (abs(det) < 1e-10) {
+  if (abs(det) < 1e-7) {
     return false;
   }
+
+  float inv_det = 1.0 / det;
 
   vec3 ao = ray.origin - a;
 
   vec3 dxao = cross(ray.direction, ao);
-  float p = dot(-dxao, ac) / det;
+  float p = dot(-dxao, ac) * inv_det;
   if (p < 0.0 || p > 1.0) {
     return false;
   }
 
-  float q = dot(dxao, ab) / det;
+  float q = dot(dxao, ab) * inv_det;
   if (q < 0.0 || p + q > 1.0) {
     return false;
   }
 
-  float t = dot(abxac, ao) / det;
+  float t = dot(abxac, ao) * inv_det;
   if (t < min_distance || t > max_distance) {
     return false;
   }
@@ -193,8 +195,12 @@ bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_dista
       t0 = t1;
       t1 = temp;
     }
-    min_distance = max(t0, min_distance);
-    max_distance = min(t1, max_distance);
+    if (t0 > min_distance) {
+      min_distance = t0;
+    }
+    if (t1 < max_distance) {
+      max_distance = t1;
+    }
     if (max_distance <= min_distance) {
       return false;
     }
@@ -213,14 +219,14 @@ bool trace(Ray ray, out HitRecord hit_record) {
     int node_index = stack[--stack_size];
     BvhNode node = get_bvh_node(node_index);
 
-    if (!hit_bounding_box(node, ray, 0.0, hit_record.t)) {
+    if (!hit_bounding_box(node, ray, 0.0001, hit_record.t)) {
       continue;
     }
 
     if (node.left_index < 0) {
       HitRecord temp_record;
       int triangle_index = -node.left_index - 1;
-      if (hit_triangle(triangle_index, ray, 0.0, hit_record.t, temp_record)) {
+      if (hit_triangle(triangle_index, ray, 0.0001, hit_record.t, temp_record)) {
         hit_record = temp_record;
       }
     }
@@ -262,10 +268,10 @@ bool near_zero(vec3 v, float epsilon) {
 
 ScatterData scatter_lambertian(SurfaceData surface_data) {
   vec3 direction = surface_data.normal + random_unit_vector();
-  while (near_zero(direction, 1e-6)) {
+  while (near_zero(direction, 1e-5)) {
     direction = surface_data.normal + random_unit_vector();
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-5, direction);
+  Ray scattered = Ray(surface_data.point, direction);
   vec3 attenuation;
   switch (surface_data.material.texture_index) {
     case -1:
