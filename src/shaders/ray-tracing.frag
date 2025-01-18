@@ -3,6 +3,7 @@
 precision highp int;
 precision highp float;
 precision highp sampler2D;
+precision highp sampler2DArray;
 
 // renderer
 uniform sampler2D u_prev_color;
@@ -16,7 +17,7 @@ uniform sampler2D u_uvs;
 uniform sampler2D u_materials;
 uniform sampler2D u_indices;
 uniform sampler2D u_bvh;
-uniform sampler2D u_textures[25];
+uniform sampler2DArray u_textures;
 uniform int u_bvh_length;
 uniform int u_max_texture_size;
 // camera
@@ -181,7 +182,13 @@ BvhNode get_bvh_node(int index) {
   vec4 data_a = texelFetch(u_bvh, coords, 0).xyzw;
   coords = to_texture_coords(index * 2 + 1);
   vec4 data_b = texelFetch(u_bvh, coords, 0).xyzw;
-  return BvhNode(int(data_a.x), int(data_a.y), vec2[](data_a.zw, data_b.xy, data_b.zw));
+  BvhNode n;
+  n.left_index = int(data_a.x);
+  n.right_index = int(data_a.y);
+  n.bounding_box_axes[0] = data_a.zw;
+  n.bounding_box_axes[1] = data_b.xy;
+  n.bounding_box_axes[2] = data_b.zw;
+  return n;
 }
 
 bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_distance) {
@@ -273,88 +280,11 @@ ScatterData scatter_lambertian(SurfaceData surface_data) {
   }
   Ray scattered = Ray(surface_data.point, direction);
   vec3 attenuation;
-  switch (surface_data.material.texture_index) {
-    case -1:
-      attenuation = surface_data.material.albedo;
-      break;
-    case 0:
-      attenuation = texture(u_textures[0], surface_data.uv).xyz;
-      break;
-    case 1:
-      attenuation = texture(u_textures[1], surface_data.uv).xyz;
-      break;
-    case 2:
-      attenuation = texture(u_textures[2], surface_data.uv).xyz;
-      break;
-    case 3:
-      attenuation = texture(u_textures[3], surface_data.uv).xyz;
-      break;
-    case 4:
-      attenuation = texture(u_textures[4], surface_data.uv).xyz;
-      break;
-    case 5:
-      attenuation = texture(u_textures[5], surface_data.uv).xyz;
-      break;
-    case 6:
-      attenuation = texture(u_textures[6], surface_data.uv).xyz;
-      break;
-    case 7:
-      attenuation = texture(u_textures[7], surface_data.uv).xyz;
-      break;
-    case 8:
-      attenuation = texture(u_textures[8], surface_data.uv).xyz;
-      break;
-    case 9:
-      attenuation = texture(u_textures[9], surface_data.uv).xyz;
-      break;
-    case 10:
-      attenuation = texture(u_textures[10], surface_data.uv).xyz;
-      break;
-    case 11:
-      attenuation = texture(u_textures[11], surface_data.uv).xyz;
-      break;
-    case 12:
-      attenuation = texture(u_textures[12], surface_data.uv).xyz;
-      break;
-    case 13:
-      attenuation = texture(u_textures[13], surface_data.uv).xyz;
-      break;
-    case 14:
-      attenuation = texture(u_textures[14], surface_data.uv).xyz;
-      break;
-    case 15:
-      attenuation = texture(u_textures[15], surface_data.uv).xyz;
-      break;
-    case 16:
-      attenuation = texture(u_textures[16], surface_data.uv).xyz;
-      break;
-    case 17:
-      attenuation = texture(u_textures[17], surface_data.uv).xyz;
-      break;
-    case 18:
-      attenuation = texture(u_textures[18], surface_data.uv).xyz;
-      break;
-    case 19:
-      attenuation = texture(u_textures[19], surface_data.uv).xyz;
-      break;
-    case 20:
-      attenuation = texture(u_textures[20], surface_data.uv).xyz;
-      break;
-    case 21:
-      attenuation = texture(u_textures[21], surface_data.uv).xyz;
-      break;
-    case 22:
-      attenuation = texture(u_textures[22], surface_data.uv).xyz;
-      break;
-    case 23:
-      attenuation = texture(u_textures[23], surface_data.uv).xyz;
-      break;
-    case 24:
-      attenuation = texture(u_textures[24], surface_data.uv).xyz;
-      break;
-    default:
-      attenuation = vec3(0.9, 0.9, 0.9);
-      break;
+  if (surface_data.material.texture_index == -1) {
+    attenuation = surface_data.material.albedo;
+  }
+  else {
+    attenuation = texture(u_textures, vec3(surface_data.uv, surface_data.material.texture_index)).xyz;
   }
   return ScatterData(attenuation, scattered);
 }

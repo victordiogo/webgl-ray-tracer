@@ -16,6 +16,7 @@ export class RayTracingRenderer {
   background_color: Vector3;
   sample_count: number;
   max_depth: number;
+  texture_32f: boolean;
 
   constructor(width: number, height: number, max_depth: number) {
     this.canvas = document.createElement('canvas');
@@ -28,12 +29,10 @@ export class RayTracingRenderer {
     if (!gl.getExtension('EXT_color_buffer_float')) {
       throw new Error('EXT_color_buffer_float is not supported');
     }
-    if (!gl.getExtension('OES_texture_float_linear')) {
-      throw new Error('OES_texture_float_linear is not supported');
-    }
+    this.texture_32f = !!gl.getExtension('OES_texture_float_linear');
     this.gl = gl;
     this.gl.viewport(0, 0, width, height);
-    this.swap_framebuffer = new SwapFramebuffer(gl, width, height);
+    this.swap_framebuffer = new SwapFramebuffer(gl, width, height, this.texture_32f);
     this.screen_quad_vao = this.create_screen_quad(gl);
     this.background_color = new Vector3(0.5, 0.7, 1.0);
     this.sample_count = 0;
@@ -83,7 +82,7 @@ export class RayTracingRenderer {
     this.canvas.height = height;
     this.gl.viewport(0, 0, width, height);
     this.swap_framebuffer.destroy();
-    this.swap_framebuffer = new SwapFramebuffer(this.gl, width, height);
+    this.swap_framebuffer = new SwapFramebuffer(this.gl, width, height, this.texture_32f);
     this.sample_count = 0;
   }
 

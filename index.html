@@ -68,16 +68,18 @@
   <div id="info">
     <span id="fps"></span></br>
     <span id="samples"></span></br>
+    <span id="triangles"></span></br>
     <span id="fov"></span></br>
     <span id="focus-distance"></span></br>
     <span id="defocus-angle"></span></br>
-    <span id="model">Model: 
-      <input type="radio" name="model" value="chicken" checked>Chicken
-      <input type="radio" name="model" value="car">Car
-      <input type="radio" name="model" value="man">Man
-      <input type="radio" name="model" value="porsche">Porsche
-      <input type="radio" name="model" value="sponza">Sponza
-    </span>
+    Model:  
+    <select id="model">
+      <option value="chicken">Chicken</option>
+      <option value="car">Car</option>
+      <option value="man">Man</option>
+      <option value="porsche">Porsche</option>
+      <option value="sponza">Sponza</option>
+    </select>
   </div>
   <button id="menu-button">?</button>
   <div id="menu">
@@ -100,13 +102,11 @@
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     });
 
-    document.querySelectorAll('input[name="model"]').forEach((input) => {
-      input.addEventListener('change', (event) => {
-        const model = event.target.value;
-        const obj_dir = "assets/models/" + model + "/";
-        const file_name = model + ".obj";
-        dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
-      });
+    document.getElementById('model').addEventListener('change', (event) => {
+      const model = event.target.value;
+      const obj_dir = "assets/models/" + model + "/";
+      const file_name = model + ".obj";
+      dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
     });
   </script>
   <script type="module" src="src/main.ts"></script>

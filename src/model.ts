@@ -142,7 +142,7 @@ export class Model {
     if (o_textures.has(texture_path)) {
       return;
     }
-    const texture = await Texture.from_image(texture_path);
+    const texture = await Texture.from_file(texture_path);
     const index = o_model.textures.length;
     o_model.textures.push(texture);
     o_textures.set(texture_path, index);

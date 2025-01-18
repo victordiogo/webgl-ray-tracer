@@ -12,7 +12,7 @@ export class Scene {
   indices: WebGLTexture;
   materials: WebGLTexture;
   bvh: WebGLTexture;
-  textures: WebGLTexture[] = [];
+  textures: WebGLTexture | null = null;
   bvh_length: number;
 
   constructor(gl: WebGL2RenderingContext) {
@@ -125,7 +125,25 @@ export class Scene {
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
 
-    this.textures = merged.textures.map(t => t.to_gl_texture(this.gl));
+    if (merged.textures.length > 0) {
+      let max_width = 0;
+      let max_height = 0;
+      merged.textures.forEach(t => {
+        max_width = Math.max(max_width, t.image.width);
+        max_height = Math.max(max_height, t.image.height);
+      });
+
+      this.textures = this.gl.createTexture();
+      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
+      this.gl.texStorage3D(this.gl.TEXTURE_2D_ARRAY, 1, this.gl.RGBA8, max_width, max_height, merged.textures.length);
+      merged.textures.forEach((t, i) => {
+        this.gl.texSubImage3D(this.gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, this.gl.RGBA, this.gl.UNSIGNED_BYTE, t.data(max_width, max_height));
+      });
+      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT);
+      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT);
+    }
   }
 
   use(program: WebGLProgram) {
@@ -153,11 +171,9 @@ export class Scene {
     this.gl.activeTexture(this.gl.TEXTURE6);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
 
-    this.textures.forEach((t, i) => {
-      this.gl.uniform1i(this.gl.getUniformLocation(program, `u_textures[${i}]`), 7 + i)
-      this.gl.activeTexture(this.gl.TEXTURE7 + i);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, t);
-    });
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_textures"), 7);
+    this.gl.activeTexture(this.gl.TEXTURE7);
+    this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
 
     this.gl.uniform1i(this.gl.getUniformLocation(program, "u_max_texture_size"), this.gl.MAX_TEXTURE_SIZE);
     this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh_length"), this.bvh_length);

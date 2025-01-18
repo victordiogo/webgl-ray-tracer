@@ -6,7 +6,13 @@ import { RayTracingRenderer } from './ray-tracing-renderer.js';
 import { Model } from './model.js';
 import { Scene } from './scene.js';
 
-main();
+try {
+  await main();
+}
+catch(e) {
+  document.body.innerText = e.message;
+  console.error(e.message);
+}
 
 async function main() {
   const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
@@ -46,22 +52,30 @@ async function main() {
   });
 
   let last_frame = performance.now();
+  let accumulated_time = 0;
+
+  document.getElementById('fps')!.innerText = "FPS: 0";
 
   const render = () => {
     const now = performance.now();
     const frame_time = now - last_frame;
     last_frame = now;
+    accumulated_time += frame_time;
 
     process_keyboard_input(keyboard, renderer, camera, frame_time);
 
     renderer.render(camera, scene);
 
-    document.getElementById('fps')!.innerText = "FPS: " + (1000 / frame_time).toFixed(2);
+    if (accumulated_time > 1000) {
+      document.getElementById('fps')!.innerText = "FPS: " + (1000 / frame_time).toFixed(2);
+      accumulated_time = 0;  
+    }
     document.getElementById('samples')!.innerText = "Samples: " + renderer.sample_count;
+    document.getElementById('triangles')!.innerText = "Triangles: " + model.indices.length / 3;
     document.getElementById('fov')!.innerText = "FOV: " + camera.vfov.toFixed(2) + "°";
     document.getElementById('focus-distance')!.innerText = "Focus Distance: " + camera.focus_distance.toFixed(2);
     document.getElementById('defocus-angle')!.innerText = "Defocus Angle: " + camera.defocus_angle.toFixed(2) + "°";
-    
+
     requestAnimationFrame(render);
   }
 
