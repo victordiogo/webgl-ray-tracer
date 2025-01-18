@@ -6,13 +6,14 @@ import { RayTracingRenderer } from './ray-tracing-renderer.js';
 import { Model } from './model.js';
 import { Scene } from './scene.js';
 
-try {
-  await main();
-}
-catch(e) {
-  document.body.innerText = e.message;
-  console.error(e.message);
-}
+(async () => {
+  try {
+    await main();
+  } catch (e) {
+    document.body.innerText = e.message;
+    console.error(e.message);
+  }
+})();
 
 async function main() {
   const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
