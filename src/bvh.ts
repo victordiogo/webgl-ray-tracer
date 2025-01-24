@@ -42,9 +42,9 @@ class Aabb {
 
   pad_to_minimuns() {
     for (let i = 0; i < 3; ++i) {
-      if (this.axes[i].max - this.axes[i].min < 1e-4) {
-        this.axes[i].min -= 1e-4;
-        this.axes[i].max += 1e-4;
+      if (this.axes[i].max - this.axes[i].min < 1e-5) {
+        this.axes[i].min -= 1e-5;
+        this.axes[i].max += 1e-5;
       }
     }
   }

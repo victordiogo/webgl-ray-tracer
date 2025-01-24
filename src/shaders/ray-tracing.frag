@@ -137,7 +137,7 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 
   vec3 abxac = cross(ab, ac);
   float det = dot(abxac, -ray.direction);
-  if (abs(det) < 1e-7) {
+  if (abs(det) < 1e-6) {
     return false;
   }
 
@@ -226,14 +226,14 @@ bool trace(Ray ray, out HitRecord hit_record) {
     int node_index = stack[--stack_size];
     BvhNode node = get_bvh_node(node_index);
 
-    if (!hit_bounding_box(node, ray, 0.0001, hit_record.t)) {
+    if (!hit_bounding_box(node, ray, 0.001, hit_record.t)) {
       continue;
     }
 
     if (node.left_index < 0) {
       HitRecord temp_record;
       int triangle_index = -node.left_index - 1;
-      if (hit_triangle(triangle_index, ray, 0.0001, hit_record.t, temp_record)) {
+      if (hit_triangle(triangle_index, ray, 0.001, hit_record.t, temp_record)) {
         hit_record = temp_record;
       }
     }
@@ -254,12 +254,13 @@ struct ScatterData {
 struct Material {
   int texture_index;
   vec3 albedo;
+  vec3 emission;
 };
 
 Material get_material(int material_index) {
   ivec2 coords = to_texture_coords(material_index);
   vec4 mat = texelFetch(u_materials, coords, 0).xyzw;
-  return Material(int(mat.x), mat.yzw);
+  return Material(int(mat.x), mat.yzw, vec3(0.0));
 }
 
 struct SurfaceData {
@@ -314,11 +315,11 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
 }
 
 vec3 cast_ray(Ray ray) {
-  vec3 color = vec3(1.0, 1.0, 1.0);
+  vec3 color = vec3(1.0);
 
   for (int depth = 0; depth <= u_max_depth; ++depth) {
     if (depth == u_max_depth) {
-      color = vec3(0.0, 0.0, 0.0);
+      color = vec3(0.0);
       break;
     }
 

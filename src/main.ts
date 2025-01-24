@@ -6,23 +6,18 @@ import { RayTracingRenderer } from './ray-tracing-renderer.js';
 import { Model } from './model.js';
 import { Scene } from './scene.js';
 
-(async () => {
-  try {
-    await main();
-  } catch (e) {
-    document.body.innerText = e.message;
-    console.error(e.message);
-  }
-})();
+main().catch(e => {
+  document.body.innerText = e.message;
+  console.error(e);
+})
 
 async function main() {
   const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 60, 45, 30, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 18, 0);
+  const camera = new Camera(renderer.gl, 60, 45, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.8, 0);
   
-  let model = await Model.import_obj('assets/models/chicken/', 'chicken.obj');
-  console.log(model);
+  let model = await Model.import_obj('assets/models/cornell-box/', 'cornell-box.obj');
 
   let scene = new Scene(renderer.gl);
   scene.add(model);
@@ -36,7 +31,7 @@ async function main() {
   addEventListener('resize', () => resize(renderer, camera));
 
   const scene_cache: Map<string, Scene> = new Map();
-  scene_cache.set('chicken.obj', scene);
+  scene_cache.set('cornell-box.obj', scene);
   addEventListener('model-change', async (event) => {
     const customEvent = event as CustomEvent;
     if (scene_cache.has(customEvent.detail.file_name)) {
@@ -52,27 +47,31 @@ async function main() {
     renderer.start_sampling();
   });
 
-  let last_frame = performance.now();
-  let accumulated_time = 0;
+  let last_time = performance.now();
+  let last_avg_time = last_time;
+  let frame_count = 0;
 
   document.getElementById('fps')!.innerText = "FPS: 0";
 
   const render = () => {
-    const now = performance.now();
-    const frame_time = now - last_frame;
-    last_frame = now;
-    accumulated_time += frame_time;
+    const current_time = performance.now();
+    const frame_time = current_time - last_time;
+    last_time = current_time;
+    ++frame_count;
 
     process_keyboard_input(keyboard, renderer, camera, frame_time);
 
     renderer.render(camera, scene);
 
-    if (accumulated_time > 1000) {
-      document.getElementById('fps')!.innerText = "FPS: " + (1000 / frame_time).toFixed(2);
-      accumulated_time = 0;  
+    const diff_time = current_time - last_avg_time;
+    if (diff_time > 1000) {
+      const avg_fps = frame_count / (diff_time / 1000);
+      document.getElementById('fps')!.innerText = "FPS: " + avg_fps.toFixed(0);
+      last_avg_time = current_time;
+      frame_count = 0;  
     }
     document.getElementById('samples')!.innerText = "Samples: " + renderer.sample_count;
-    document.getElementById('triangles')!.innerText = "Triangles: " + model.indices.length / 3;
+    document.getElementById('triangles')!.innerText = "Triangles: " + scene.models.reduce((acc, model) => acc + model.indices.length / 3, 0);
     document.getElementById('fov')!.innerText = "FOV: " + camera.vfov.toFixed(2) + "°";
     document.getElementById('focus-distance')!.innerText = "Focus Distance: " + camera.focus_distance.toFixed(2);
     document.getElementById('defocus-angle')!.innerText = "Defocus Angle: " + camera.defocus_angle.toFixed(2) + "°";
@@ -151,7 +150,6 @@ function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, cam
 }
 
 function process_mouse_wheel(event: WheelEvent, renderer: RayTracingRenderer, camera: Camera) {
-  // very close to center (radial distance close to 0) changes very slower
   let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.001 * event.deltaY;
   if (Math.abs(offset) > 10) {
     offset = 10 * Math.sign(offset);
