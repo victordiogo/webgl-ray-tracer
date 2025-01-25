@@ -34,7 +34,7 @@ export class RayTracingRenderer {
     this.gl.viewport(0, 0, width, height);
     this.swap_framebuffer = new SwapFramebuffer(gl, width, height, this.texture_32f);
     this.screen_quad_vao = this.create_screen_quad(gl);
-    this.background_color = new Vector3(0.5, 0.7, 1.0);
+    this.background_color = new Vector3(0, 0, 0);
     this.sample_count = 0;
     this.max_depth = max_depth;
   }

@@ -6,10 +6,12 @@ import { Vector2, Vector3, Vector4 } from "three";
 export class Material {
   texture_index: number;
   albedo: Vector3;
+  emission: Vector3;
 
-  constructor(texture_index: number = -1, albedo: Vector3 = new Vector3(1, 1, 1)) {
+  constructor(texture_index: number = -1, albedo: Vector3 = new Vector3(1, 1, 1), emission: Vector3 = new Vector3(0, 0, 0)) {
     this.texture_index = texture_index;
     this.albedo = albedo;
+    this.emission = emission;
   }
 };
 
@@ -59,7 +61,7 @@ export class Model {
         if (!material) {
           throw new Error("Material must be defined before usemtl");
         }
-        model.materials.push(new Material(material.texture_index, material.albedo));
+        model.materials.push(material);
       }
       else if (tokens[0] === "f") {
         if (model.materials.length === 0) {
@@ -130,6 +132,17 @@ export class Model {
         }
         const material = o_materials.get(material_name)!;
         material.albedo = new Vector3(
+          parseFloat(tokens[1]),
+          parseFloat(tokens[2]),
+          parseFloat(tokens[3])
+        );
+      }
+      else if (tokens[0] === "Ke") {
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Ke");
+        }
+        const material = o_materials.get(material_name)!;
+        material.emission = new Vector3(
           parseFloat(tokens[1]),
           parseFloat(tokens[2]),
           parseFloat(tokens[3])

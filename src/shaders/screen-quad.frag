@@ -15,5 +15,7 @@ vec3 gamma_correct(vec3 color) {
 
 void main() {
   vec3 color = texelFetch(u_render, ivec2(gl_FragCoord.xy), 0).rgb / float(u_sample_count);
+  // tone mapping
+  color = color / (color + vec3(1.0));
   o_color = vec4(gamma_correct(color), 1.0);
 }

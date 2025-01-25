@@ -22,9 +22,8 @@
       position: absolute;
       top: 10px;
       left: 10px;
-      padding: 4px 8px;
-      background-color: #000a;
-      border-radius: 5px;
+      padding: 8px 8px;
+      background-color: #0008;
       color: #fff;
     }
 
@@ -34,13 +33,12 @@
       right: 10px;
       width: 30px;
       height: 30px;
-      background-color: #000a;
+      background-color: #0008;
       color: #fff;
       font-size: 20px;
       text-align: center;
       line-height: 30px;
       border: none;
-      border-radius: 5px;
       cursor: pointer;
     }
 
@@ -49,8 +47,7 @@
       top: 50px;
       right: 10px;
       padding: 5px 20px;
-      background-color: #000a;
-      border-radius: 5px;
+      background-color: #0008;
       color: #fff;
     }
 
@@ -72,12 +69,13 @@
     <span id="fov"></span></br>
     <span id="focus-distance"></span></br>
     <span id="defocus-angle"></span></br>
+    Background: <input type="color" id="background-color" value="#000000"></br>
     Model:  
     <select id="model">
       <option value="cornell-box">Cornell Box</option>
       <option value="chicken">Chicken</option>
-      <option value="car">Car</option>
       <option value="man">Man</option>
+      <option value="car">Car</option>
       <option value="porsche">Porsche</option>
       <option value="sponza">Sponza</option>
     </select>
@@ -108,6 +106,10 @@
       const obj_dir = "assets/models/" + model + "/";
       const file_name = model + ".obj";
       dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
+    });
+
+    document.getElementById('background-color').addEventListener('input', (event) => {
+      dispatchEvent(new CustomEvent('background-color-input', { detail: { color: event.target.value } }));
     });
   </script>
   <script type="module" src="src/main.ts"></script>

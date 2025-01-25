@@ -48,7 +48,7 @@ export class Scene {
         if (tex_index !== -1) {
           tex_index += merged.textures.length;
         }
-        merged.materials.push(new Material(tex_index, m.albedo));
+        merged.materials.push(new Material(tex_index, m.albedo, m.emission));
       });
       merged.textures.push(...model.textures);
     }
@@ -59,7 +59,6 @@ export class Scene {
   update() {
     const merged = this.merge_models();
     const bvh = new Bvh(merged);
-    console.log(bvh);
 
     this.bvh_length = bvh.list.length;
     
@@ -105,10 +104,12 @@ export class Scene {
     
     this.materials = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
-    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length);
-    const materials_height = Math.ceil(merged.materials.length / materials_width);
+    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length * 2);
+    const materials_height = Math.ceil(merged.materials.length * 2 / materials_width);
     data = new Float32Array(materials_width * materials_height * 4);
-    merged.materials.forEach((m, i) => data.set([m.texture_index, ...m.albedo], i * 4));
+    merged.materials.forEach((m, i) => {
+      data.set([m.texture_index, ...m.albedo, ...m.emission, 0], i * 8)
+    });
     this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, materials_width, materials_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);

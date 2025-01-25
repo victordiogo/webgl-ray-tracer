@@ -15,7 +15,7 @@ async function main() {
   const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 60, 45, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.8, 0);
+  const camera = new Camera(renderer.gl, 90, 0, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.8, 0);
   
   let model = await Model.import_obj('assets/models/cornell-box/', 'cornell-box.obj');
 
@@ -29,6 +29,17 @@ async function main() {
   renderer.canvas.addEventListener('mousewheel', e => process_mouse_wheel(e as WheelEvent, renderer, camera));
 
   addEventListener('resize', () => resize(renderer, camera));
+
+  addEventListener('background-color-input', (event) => {
+    const customEvent = event as CustomEvent;
+    const color = parseInt(customEvent.detail.color.substring(1), 16);
+    renderer.background_color = new Vector3(
+      ((color >> 16) & 0xff) / 255,
+      ((color >> 8) & 0xff) / 255,
+      (color & 0xff) / 255
+    );
+    renderer.start_sampling();
+  });
 
   const scene_cache: Map<string, Scene> = new Map();
   scene_cache.set('cornell-box.obj', scene);

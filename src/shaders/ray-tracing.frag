@@ -226,14 +226,14 @@ bool trace(Ray ray, out HitRecord hit_record) {
     int node_index = stack[--stack_size];
     BvhNode node = get_bvh_node(node_index);
 
-    if (!hit_bounding_box(node, ray, 0.001, hit_record.t)) {
+    if (!hit_bounding_box(node, ray, 0.0, hit_record.t)) {
       continue;
     }
 
     if (node.left_index < 0) {
       HitRecord temp_record;
       int triangle_index = -node.left_index - 1;
-      if (hit_triangle(triangle_index, ray, 0.001, hit_record.t, temp_record)) {
+      if (hit_triangle(triangle_index, ray, 0.0, hit_record.t, temp_record)) {
         hit_record = temp_record;
       }
     }
@@ -258,9 +258,11 @@ struct Material {
 };
 
 Material get_material(int material_index) {
-  ivec2 coords = to_texture_coords(material_index);
-  vec4 mat = texelFetch(u_materials, coords, 0).xyzw;
-  return Material(int(mat.x), mat.yzw, vec3(0.0));
+  ivec2 coords = to_texture_coords(material_index * 2 + 0);
+  vec4 data_a = texelFetch(u_materials, coords, 0).xyzw;
+  coords = to_texture_coords(material_index * 2 + 1);
+  vec4 data_b = texelFetch(u_materials, coords, 0).xyzw;
+  return Material(int(data_a.x), data_a.yzw, data_b.xyz);
 }
 
 struct SurfaceData {
@@ -279,7 +281,7 @@ ScatterData scatter_lambertian(SurfaceData surface_data) {
   while (near_zero(direction, 1e-5)) {
     direction = surface_data.normal + random_unit_vector();
   }
-  Ray scattered = Ray(surface_data.point, direction);
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-4, direction);
   vec3 attenuation;
   if (surface_data.material.texture_index == -1) {
     attenuation = surface_data.material.albedo;
@@ -331,10 +333,17 @@ vec3 cast_ray(Ray ray) {
     }
 
     SurfaceData surface_data = get_surface_data(ray, hit_record);
+    // color = surface_data.normal * 0.5 + 0.5;
 
-    ScatterData scatter_data = scatter_lambertian(surface_data);
-    color *= scatter_data.attenuation;
-    ray = scatter_data.scattered;
+    if (near_zero(surface_data.material.emission, 1e-5)) {
+      ScatterData scatter_data = scatter_lambertian(surface_data);
+      color *= scatter_data.attenuation;
+      ray = scatter_data.scattered;
+    }
+    else {
+      color *= surface_data.material.emission;
+      break;
+    }
   }
 
   return color;
