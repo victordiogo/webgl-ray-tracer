@@ -7,11 +7,26 @@ export class Material {
   texture_index: number;
   albedo: Vector3;
   emission: Vector3;
+  metallic: number;
+  roughness: number; 
+  transparency: number; 
+  refraction_index: number;
 
-  constructor(texture_index: number = -1, albedo: Vector3 = new Vector3(1, 1, 1), emission: Vector3 = new Vector3(0, 0, 0)) {
+  constructor(
+    texture_index: number = -1, 
+    albedo: Vector3 = new Vector3(1, 1, 1), 
+    emission: Vector3 = new Vector3(0, 0, 0),
+    metallic: number = 0,
+    roughness: number = 0,
+    transparency: number = 0,
+    refraction_index: number = 1) {
     this.texture_index = texture_index;
     this.albedo = albedo;
     this.emission = emission;
+    this.metallic = metallic;
+    this.roughness = roughness;
+    this.transparency = transparency;
+    this.refraction_index = refraction_index;
   }
 };
 
@@ -147,6 +162,37 @@ export class Model {
           parseFloat(tokens[2]),
           parseFloat(tokens[3])
         );
+      }
+      else if (tokens[0] === "Pm") {
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Pm");
+        }
+        const material = o_materials.get(material_name)!;
+        material.metallic = parseFloat(tokens[1]);
+      }
+      else if (tokens[0] === "Pr") {
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Pf");
+        }
+        const material = o_materials.get(material_name)!;
+        material.roughness = parseFloat(tokens[1]);
+      }
+      else if (tokens[0] === "Tr" || tokens[0] === "d") {
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Tr");
+        }
+        const material = o_materials.get(material_name)!
+        material.transparency = parseFloat(tokens[1]);
+        if (tokens[0] === "d") {
+          material.transparency = 1 - material.transparency;
+        }
+      }
+      else if (tokens[0] === "Ni") { console.log(tokens[1]);
+        if (!material_name) {
+          throw new Error("newmtl must be defined before Ni");
+        }
+        const material = o_materials.get(material_name)!;
+        material.refraction_index = parseFloat(tokens[1]);
       }
     }
   }

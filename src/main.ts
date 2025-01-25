@@ -12,10 +12,10 @@ main().catch(e => {
 })
 
 async function main() {
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 3);
+  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 5);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 90, 0, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 60, 1.8, 0);
+  const camera = new Camera(renderer.gl, 90, 0, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 10, 0);
   
   let model = await Model.import_obj('assets/models/cornell-box/', 'cornell-box.obj');
 

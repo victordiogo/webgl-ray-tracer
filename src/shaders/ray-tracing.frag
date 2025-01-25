@@ -31,8 +31,8 @@ uniform vec3 u_look_from;
 
 out vec4 o_color;
 
-float g_max_float = 3.402823466e+38;
-float g_pi = 3.1415926535897932385;
+const float g_max_float = 3.402823466e+38;
+const float g_pi = 3.1415926535897932385;
 
 // --> RANDOM NUMBER GENERATOR
 uint g_rng_state;
@@ -137,7 +137,7 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 
   vec3 abxac = cross(ab, ac);
   float det = dot(abxac, -ray.direction);
-  if (abs(det) < 1e-6) {
+  if (abs(det) < 1e-5) {
     return false;
   }
 
@@ -255,20 +255,27 @@ struct Material {
   int texture_index;
   vec3 albedo;
   vec3 emission;
+  float metallic;
+  float roughness;
+  float transparency;
+  float refraction_index;
 };
 
 Material get_material(int material_index) {
-  ivec2 coords = to_texture_coords(material_index * 2 + 0);
+  ivec2 coords = to_texture_coords(material_index * 3 + 0);
   vec4 data_a = texelFetch(u_materials, coords, 0).xyzw;
-  coords = to_texture_coords(material_index * 2 + 1);
+  coords = to_texture_coords(material_index * 3 + 1);
   vec4 data_b = texelFetch(u_materials, coords, 0).xyzw;
-  return Material(int(data_a.x), data_a.yzw, data_b.xyz);
+  coords = to_texture_coords(material_index * 3 + 2);
+  vec4 data_c = texelFetch(u_materials, coords, 0).xyzw;
+  return Material(int(data_a.x), data_a.yzw, data_b.xyz, data_b.w, data_c.x, data_c.y, data_c.z);
 }
 
 struct SurfaceData {
   vec3 point;
   vec3 normal;
   vec2 uv;
+  bool front_face;
   Material material;
 };
 
@@ -278,18 +285,50 @@ bool near_zero(vec3 v, float epsilon) {
 
 ScatterData scatter_lambertian(SurfaceData surface_data) {
   vec3 direction = surface_data.normal + random_unit_vector();
-  while (near_zero(direction, 1e-5)) {
-    direction = surface_data.normal + random_unit_vector();
+  if (near_zero(direction, 1e-5)) {
+    direction = surface_data.normal;
   }
   Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-4, direction);
-  vec3 attenuation;
-  if (surface_data.material.texture_index == -1) {
-    attenuation = surface_data.material.albedo;
+  return ScatterData(surface_data.material.albedo, scattered);
+}
+
+ScatterData scatter_metal(Ray ray, SurfaceData surface_data) {
+  vec3 reflected = reflect(ray.direction, surface_data.normal);
+  vec3 ref = normalize(reflected) + surface_data.material.roughness * random_unit_vector();
+  if (dot(ref, surface_data.normal) < 0.0) {
+    ref = reflected;
+  }
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-4, ref);
+  return ScatterData(surface_data.material.albedo, scattered);
+}
+
+float reflectance(float cosine, float ri) {
+  float r0 = (1.0 - ri) / (1.0 + ri);
+  r0 = r0 * r0;
+  return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
+}
+
+ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
+  float refraction_index = surface_data.front_face ? 1.0 / surface_data.material.refraction_index : surface_data.material.refraction_index;
+
+  vec3 unit_direction = normalize(ray.direction);
+  float cos_theta = min(dot(-unit_direction, surface_data.normal), 1.0);  
+  float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+
+  bool cannot_refract = refraction_index * sin_theta > 1.0;
+  vec3 direction;
+  vec3 point;
+
+  if (cannot_refract || reflectance(cos_theta, refraction_index) > rand()) {
+    direction = reflect(unit_direction, surface_data.normal);
+    point = surface_data.point + surface_data.normal * 1e-4;
   }
   else {
-    attenuation = texture(u_textures, vec3(surface_data.uv, surface_data.material.texture_index)).xyz;
+    direction = refract(unit_direction, surface_data.normal, refraction_index);
+    point = surface_data.point - surface_data.normal * 1e-4;
   }
-  return ScatterData(attenuation, scattered);
+
+  return ScatterData(surface_data.material.albedo, Ray(point, direction));
 }
 
 SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
@@ -307,13 +346,86 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
 
   data.point = ray_at(ray, hit_record.t);
   data.normal = normalize(r * a_normal + hit_record.p * b_normal + hit_record.q * c_normal);
-  if (dot(data.normal, ray.direction) > 0.0) {
+  data.front_face = dot(ray.direction, data.normal) < 0.0;
+  if (!data.front_face) {
     data.normal = -data.normal;
   }
   data.uv = r * a_uv + hit_record.p * b_uv + hit_record.q * c_uv;
   data.material = get_material(hit_record.material_index);
 
+  if (data.material.texture_index != -1) {
+    data.material.albedo = texture(u_textures, vec3(data.uv, data.material.texture_index)).xyz;
+  }
+
   return data;
+}
+
+vec3 fresnel_schlick(float cosTheta, vec3 F0){
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+} 
+
+float distribution_ggx(vec3 N, vec3 H, float roughness) {
+  float a      = roughness*roughness;
+  float a2     = a*a;
+  float NdotH  = max(dot(N, H), 0.0);
+  float NdotH2 = NdotH*NdotH;
+
+  float num   = a2;
+  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+  denom = g_pi * denom * denom;
+
+  return num / denom;
+}
+
+float geometry_schlick_ggx(float NdotV, float roughness) {
+  float r = (roughness + 1.0);
+  float k = (r*r) / 8.0;
+
+  float num   = NdotV;
+  float denom = NdotV * (1.0 - k) + k;
+
+  return num / denom;
+}
+
+float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
+  float ggx2  = geometry_schlick_ggx(NdotV, roughness);
+  float ggx1  = geometry_schlick_ggx(NdotL, roughness);
+
+  return ggx1 * ggx2;
+}
+
+ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
+  vec3 N = surface_data.normal;
+  vec3 V = normalize(u_look_from - surface_data.point);
+  vec3 L = random_unit_vector();
+  if (dot(L, N) < 0.0) {
+    L = -L;
+  }
+  L = normalize(L);
+
+  vec3 H = normalize(L + V);
+
+  vec3 f0 = mix(vec3(0.04), surface_data.material.albedo, surface_data.material.metallic);
+  vec3 F = fresnel_schlick(clamp(dot(H, V), 0.0, 1.0), f0);
+
+  float NDF = distribution_ggx(N, H, surface_data.material.roughness);
+  float G = geometry_smith(N, V, L, surface_data.material.roughness);
+
+  vec3 numerator = NDF * G * F;
+  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 1e-4;
+  vec3 specular = numerator / denominator;
+
+  vec3 ks = F;
+  vec3 kd = vec3(1.0) - ks;
+  kd *= 1.0 - surface_data.material.metallic;
+
+  float ndotl = max(dot(N, L), 0.0);
+
+  vec3 attenuation = (kd * surface_data.material.albedo / g_pi + specular) * ndotl;
+
+  return ScatterData(attenuation, Ray(surface_data.point + N * 1e-4, L));
 }
 
 vec3 cast_ray(Ray ray) {
@@ -328,7 +440,7 @@ vec3 cast_ray(Ray ray) {
     HitRecord hit_record;
 
     if (!trace(ray, hit_record)) {
-      color *= u_background_color;
+      color *= u_background_color * 3.0;
       break;
     }
 
@@ -336,7 +448,17 @@ vec3 cast_ray(Ray ray) {
     // color = surface_data.normal * 0.5 + 0.5;
 
     if (near_zero(surface_data.material.emission, 1e-5)) {
-      ScatterData scatter_data = scatter_lambertian(surface_data);
+      // ScatterData scatter_data = scatter_pbr(ray, surface_data);
+      ScatterData scatter_data;
+      if (surface_data.material.metallic > 0.5) {
+        scatter_data = scatter_metal(ray, surface_data);
+      }
+      else if (surface_data.material.transparency > 0.5) {
+        scatter_data = scatter_dielectric(ray, surface_data);
+      }
+      else {
+        scatter_data = scatter_lambertian(surface_data);
+      }
       color *= scatter_data.attenuation;
       ray = scatter_data.scattered;
     }
@@ -349,9 +471,7 @@ vec3 cast_ray(Ray ray) {
   return color;
 }
 
-void main() {
-  init_rng();
-
+Ray generate_ray() {
   float r = sqrt(rand());
   float theta = 2.0 * g_pi * rand();
   vec3 radial_offset = u_defocus_radius * r * (cos(theta) * u_right + sin(theta) * u_up);
@@ -360,7 +480,13 @@ void main() {
 
   vec3 position = u_initial_position + gl_FragCoord.x * u_step_x + gl_FragCoord.y * u_step_y;
   vec3 origin = u_look_from + radial_offset;
-  Ray ray = Ray(origin, position + pos_offset - origin);
+  return Ray(origin, position + pos_offset - origin);
+}
+
+void main() {
+  init_rng();
+
+  Ray ray = generate_ray();
   vec3 color = cast_ray(ray);
 
   if (u_sample_count == 1) {

@@ -129,11 +129,13 @@ refl paint_metallicRoughness.png
 newmtl mat10
 Ns 283.68855
 Ka 1.0 1.0 1.0
-Kd 0.67987 0.67987 0.67987
+Kd 0.17987 0.37987 0.97987
 Ks 1 1 1
 Ke 0.0 0.0 0.0
 Ni 1.0
-d 0.24262
+d 0.84262
+Pm 1
+Pr 0.6
 illum 9
 map_Kd coat_baseColor.png
 map_Ns coat_metallicRoughness.png

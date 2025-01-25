@@ -7,7 +7,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/lion.png
 map_Disp textures/lion_ddn.png
@@ -19,7 +19,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/background.png
 map_Disp textures/background_ddn.png
@@ -31,7 +31,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 
 
@@ -53,7 +53,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_arch_diff.png
 map_Ka textures/sponza_arch_diff.png
@@ -65,7 +65,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/spnza_bricks_a_diff.png
 map_Disp textures/spnza_bricks_a_ddn.png
@@ -77,7 +77,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_ceiling_a_diff.png
 map_Ka textures/sponza_ceiling_a_diff.png
@@ -102,7 +102,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_column_a_diff.png
 map_Disp textures/sponza_column_a_ddn.png
@@ -114,7 +114,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_column_b_diff.png
 map_Disp textures/sponza_column_b_ddn.png
@@ -126,7 +126,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_column_c_diff.png
 map_Disp textures/sponza_column_c_ddn.png
@@ -138,7 +138,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_details_diff.png
 map_Ka textures/sponza_details_diff.png
@@ -150,7 +150,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_fabric_diff.png
 map_Ka textures/sponza_fabric_diff.png
@@ -162,7 +162,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_curtain_diff.png
 map_Ka textures/sponza_curtain_diff.png
@@ -175,7 +175,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_fabric_blue_diff.png
 map_Ka textures/sponza_fabric_blue_diff.png
@@ -188,7 +188,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_fabric_green_diff.png
 map_Ka textures/sponza_fabric_green_diff.png
@@ -201,7 +201,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_curtain_green_diff.png
 map_Ka textures/sponza_curtain_green_diff.png
@@ -213,7 +213,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_curtain_blue_diff.png
 map_Ka textures/sponza_curtain_blue_diff.png
@@ -226,7 +226,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_flagpole_diff.png
 map_Ka textures/sponza_flagpole_diff.png
@@ -238,7 +238,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_floor_a_diff.png
 map_Ka textures/sponza_floor_a_diff.png
@@ -263,7 +263,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/sponza_roof_diff.png
 map_Ka textures/sponza_roof_diff.png
@@ -275,7 +275,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/vase_dif.png
 map_Ka textures/vase_dif.png
@@ -287,7 +287,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/vase_hanging.png
 map_Ka textures/vase_hanging.png
@@ -299,7 +299,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.470400 0.470400 0.470400
 Ks 0.000000 0.000000 0.000000
 Ni 1.000000
-d 0.000000
+d 1.000000
 illum 2
 map_Kd textures/vase_round.png
 map_Disp textures/vase_round_ddn.png

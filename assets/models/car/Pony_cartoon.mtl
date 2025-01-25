@@ -23,9 +23,9 @@ newmtl Windows_SG
 illum 4
 Kd 0.00 0.00 0.00
 Ka 0.00 0.00 0.00
-Tf 0.09 0.09 0.09
+Tr 1
+Ni 1.500
 map_Kd Body_dDo_d_orange.jpg
-Ni 1.00
 Ks 0.00 0.00 0.00
 map_Ks Body_dDo_s.jpg
 Ns 0.06
