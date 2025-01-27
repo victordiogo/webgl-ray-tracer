@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebGL Ray Tracer</title>
+
+  <style>
+    body { 
+      font-family: 'SF Pro Text', 'Segoe UI', 'Roboto', 'Arial', sans-serif;
+      margin: 0; 
+      padding: 0;
+    }
+
+    canvas {
+      display: block;
+      margin: 0 auto;
+      background-color: #000;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 8px 8px;
+      background-color: #0008;
+      color: #fff;
+    }
+
+    #menu-button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 30px;
+      height: 30px;
+      background-color: #0008;
+      color: #fff;
+      font-size: 20px;
+      text-align: center;
+      line-height: 30px;
+      border: none;
+      cursor: pointer;
+    }
+
+    #menu {
+      position: absolute;
+      top: 50px;
+      right: 10px;
+      padding: 5px 20px;
+      background-color: #0008;
+      color: #fff;
+    }
+
+    #menu ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    #menu h1 {
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <span id="fps"></span></br>
+    <span id="samples"></span></br>
+    <span id="triangles"></span></br>
+    <span id="fov"></span></br>
+    <span id="focus-distance"></span></br>
+    <span id="defocus-angle"></span></br>
+    Background: <input type="color" id="background-color" value="#000000"></br>
+    Model:  
+    <select id="model">
+      <option value="cornell-box">Cornell Box</option>
+      <option value="chicken">Chicken</option>
+      <option value="cornell-box-sphere">Cornell Box (Spheres)</option>
+      <option value="man">Man</option>
+      <option value="car">Car</option>
+      <option value="porsche">Porsche</option>
+      <option value="sponza">Sponza</option>
+    </select>
+  </div>
+  <button id="menu-button">?</button>
+  <div id="menu">
+    <h1>Controls</h1>
+    <ul>
+      <li>Mouse: Rotate camera</li>
+      <li>Scroll: Ajust camera distance</li>
+      <li>W/S: Adjust camera fov</li>
+      <li>A/D: Adjust focus distance</li>
+      <li>Q/E: Adjust defocus angle</li>
+    </ul>
+  </div>
+  <script>
+    const menu_button = document.getElementById('menu-button');
+    const menu = document.getElementById('menu');
+
+    menu.style.display = 'none';
+
+    menu_button.addEventListener('click', () => {
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.getElementById('model').addEventListener('change', (event) => {
+      const model = event.target.value;
+      const obj_dir = "assets/models/" + model + "/";
+      const file_name = model + ".obj";
+      dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
+    });
+
+    document.getElementById('background-color').addEventListener('input', (event) => {
+      dispatchEvent(new CustomEvent('background-color-input', { detail: { color: event.target.value } }));
+    });
+  </script>
+  <script type="module" src="src/main.ts"></script>
+</body>
+</html>
