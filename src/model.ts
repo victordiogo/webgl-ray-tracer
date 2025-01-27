@@ -17,7 +17,7 @@ export class Material {
     albedo: Vector3 = new Vector3(1, 1, 1), 
     emission: Vector3 = new Vector3(0, 0, 0),
     metallic: number = 0,
-    roughness: number = 0,
+    roughness: number = 1,
     transparency: number = 0,
     refraction_index: number = 1) {
     this.texture_index = texture_index;
@@ -187,7 +187,7 @@ export class Model {
           material.transparency = 1 - material.transparency;
         }
       }
-      else if (tokens[0] === "Ni") { console.log(tokens[1]);
+      else if (tokens[0] === "Ni") {
         if (!material_name) {
           throw new Error("newmtl must be defined before Ni");
         }

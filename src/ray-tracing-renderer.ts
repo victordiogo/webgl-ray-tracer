@@ -44,7 +44,7 @@ export class RayTracingRenderer {
     this.ray_tracing_program = await create_shader_program(this.gl, './src/shaders/ray-tracing.vert', './src/shaders/ray-tracing.frag');
   }
 
-  start_sampling() {
+  reset_sampling() {
     this.sample_count = 0;
   }
 
@@ -58,7 +58,7 @@ export class RayTracingRenderer {
       this.gl.activeTexture(this.gl.TEXTURE0);
       this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.offscreen_texture);
       this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_sample_count'), this.sample_count);
-      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_max_depth'), this.max_depth);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_max_depth'), this.sample_count == 1 ? 2 : this.max_depth);
       this.gl.uniform3fv(this.gl.getUniformLocation(this.ray_tracing_program, 'u_background_color'), this.background_color.toArray());
       camera.use(this.ray_tracing_program);
       scene.use(this.ray_tracing_program);

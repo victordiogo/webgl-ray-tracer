@@ -1,0 +1,147 @@
+# Blender 4.3.2 MTL File: 'None'
+# www.blender.org
+
+newmtl mat1
+Ka 0.400510 0.400510 0.400510
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 3
+map_Kd 930_plastics_baseColor.png
+map_Ns 930_plastics_metallicRoughness.png
+map_refl 930_plastics_metallicRoughness.png
+
+newmtl mat10
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 0.842620
+illum 6
+map_Kd coat_baseColor.png
+map_Ns coat_metallicRoughness.png
+map_refl coat_metallicRoughness.png
+map_Bump paint_clearcoat_normal.png
+
+newmtl mat11
+Ns 0.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.001420 0.001410 0.001410
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+
+newmtl mat12
+Ns 818.113403
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.000000 0.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 0.250000
+illum 9
+map_Bump 930_lights_normal.png
+
+newmtl mat13
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd 930_wunderbaum_baseColor.png
+map_Ns 930_wunderbaum_metallicRoughness.png
+map_refl 930_wunderbaum_metallicRoughness.png
+
+newmtl mat2
+Ns 548.357178
+Ka 0.822530 0.822530 0.822530
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 0.990000
+illum 6
+map_Kd 930_stickers_baseColor.png
+
+newmtl mat3
+Ns 858.041138
+Ka 0.263910 0.263910 0.263910
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 3
+map_Kd plate_baseColor.png
+map_Bump plate_normal.png
+
+newmtl mat4
+Ka 0.941010 0.941010 0.941010
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 3
+map_Kd 930_rim_baseColor.png
+map_Ns 930_rim_metallicRoughness.png
+map_refl 930_rim_metallicRoughness.png
+map_Bump 930_rim_normal.png
+
+newmtl mat5
+Ka 0.181890 0.181890 0.181890
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 3
+map_Kd 930_tire_baseColor.png
+map_Ns 930_tire_metallicRoughness.png
+map_refl 930_tire_metallicRoughness.png
+map_Bump 930_tire_normal.png
+
+newmtl mat6
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd 930_lights_baseColor.png
+map_Ns 930_lights_metallicRoughness.png
+map_refl 930_lights_metallicRoughness.png
+map_Bump 930_lights_normal.png
+
+newmtl mat7
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 0.004290
+illum 9
+map_Kd glass_baseColor.png
+map_Ns glass_metallicRoughness.png
+map_refl glass_metallicRoughness.png
+
+newmtl mat8
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd 930_chromes_baseColor.png
+map_Ns 930_chromes_metallicRoughness.png
+map_refl 930_chromes_metallicRoughness.png
+
+newmtl mat9
+Ka 1.000000 1.000000 1.000000
+Kd 0.095870 0.088860 0.086210
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Ns paint_metallicRoughness.png
+map_refl paint_metallicRoughness.png

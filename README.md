@@ -1,4 +1,5 @@
 # To Do
-- Support for sampler2DArray to send textures
+- Load GLB
+- Normal map
 - Importance Sampling
 - Physically based materials

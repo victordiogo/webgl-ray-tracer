@@ -12,12 +12,13 @@ main().catch(e => {
 })
 
 async function main() {
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 5);
+  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 7);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
   const camera = new Camera(renderer.gl, 90, 0, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 10, 0);
   
   let model = await Model.import_obj('assets/models/cornell-box/', 'cornell-box.obj');
+  console.log(model);
 
   let scene = new Scene(renderer.gl);
   scene.add(model);
@@ -38,7 +39,7 @@ async function main() {
       ((color >> 8) & 0xff) / 255,
       (color & 0xff) / 255
     );
-    renderer.start_sampling();
+    renderer.reset_sampling();
   });
 
   const scene_cache: Map<string, Scene> = new Map();
@@ -55,7 +56,7 @@ async function main() {
       scene.update();
       scene_cache.set(customEvent.detail.file_name, scene);
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   });
 
   let last_time = performance.now();
@@ -105,39 +106,58 @@ function process_keyboard_input(keyboard: KeyboardState, renderer: RayTracingRen
     if (camera.vfov < 1) {
       camera.vfov = 1;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   if (keyboard.pressed('S')) {
     camera.vfov += 0.1 * frame_time;
     if (camera.vfov > 179) {
       camera.vfov = 179;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   if (keyboard.pressed('D')) {
     camera.focus_distance += 0.02 * frame_time;
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   if (keyboard.pressed('A')) {
     camera.focus_distance -= 0.02 * frame_time;
-    if (camera.focus_distance < 1) {
-      camera.focus_distance = 1;
+    if (camera.focus_distance < 0.1) {
+      camera.focus_distance = 0.1;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   if (keyboard.pressed('Q')) {
     camera.defocus_angle -= 0.002 * frame_time;
     if (camera.defocus_angle < 0) {
       camera.defocus_angle = 0;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   if (keyboard.pressed('E')) {
     camera.defocus_angle += 0.002 * frame_time;
     if (camera.defocus_angle > 45) {
       camera.defocus_angle = 45;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
+  }
+  if (keyboard.pressed('up')) {
+    let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.005;
+    if (offset > 2) {
+      offset = 2;
+    }
+    camera.radial_distance -= offset * frame_time;
+    if (camera.radial_distance < 0.1) {
+      camera.radial_distance = 0.1;
+    }
+    renderer.reset_sampling();
+  }
+  if (keyboard.pressed('down')) {
+    let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.005;
+    if (offset > 2) {
+      offset = 2;
+    }
+    camera.radial_distance += offset * frame_time;
+    renderer.reset_sampling();
   }
   keyboard.update();
 }
@@ -153,7 +173,7 @@ function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, cam
     if (camera.polar_angle < 0.01) {
       camera.polar_angle = 0.01;
     }
-    renderer.start_sampling();
+    renderer.reset_sampling();
   }
   else {
     renderer.canvas.style.cursor = 'grab';
@@ -162,15 +182,15 @@ function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, cam
 
 function process_mouse_wheel(event: WheelEvent, renderer: RayTracingRenderer, camera: Camera) {
   let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.001 * event.deltaY;
-  if (Math.abs(offset) > 10) {
-    offset = 10 * Math.sign(offset);
+  if (Math.abs(offset) > 2) {
+    offset = 2 * Math.sign(offset);
   }
   camera.radial_distance += offset;
   if (camera.radial_distance < 0.1) {
     camera.radial_distance = 0.1;
   }
-  if (camera.radial_distance > 500) {
-    camera.radial_distance = 500;
+  if (camera.radial_distance > 100) {
+    camera.radial_distance = 100;
   }
-  renderer.start_sampling();
+  renderer.reset_sampling();
 }

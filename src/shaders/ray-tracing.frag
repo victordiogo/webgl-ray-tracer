@@ -137,7 +137,7 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 
   vec3 abxac = cross(ab, ac);
   float det = dot(abxac, -ray.direction);
-  if (abs(det) < 1e-5) {
+  if (abs(det) < 1e-8) {
     return false;
   }
 
@@ -216,7 +216,7 @@ bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_dista
 }
 
 bool trace(Ray ray, out HitRecord hit_record) {
-  int stack[32];
+  int stack[64];
   int stack_size = 0;
   stack[stack_size++] = u_bvh_length - 1;
 
@@ -288,7 +288,7 @@ ScatterData scatter_lambertian(SurfaceData surface_data) {
   if (near_zero(direction, 1e-5)) {
     direction = surface_data.normal;
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-4, direction);
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-6, direction);
   return ScatterData(surface_data.material.albedo, scattered);
 }
 
@@ -298,7 +298,7 @@ ScatterData scatter_metal(Ray ray, SurfaceData surface_data) {
   if (dot(ref, surface_data.normal) < 0.0) {
     ref = reflected;
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-4, ref);
+  Ray scattered = Ray(surface_data.point + surface_data.normal * 1e-6, ref);
   return ScatterData(surface_data.material.albedo, scattered);
 }
 
@@ -321,11 +321,11 @@ ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
 
   if (cannot_refract || reflectance(cos_theta, refraction_index) > rand()) {
     direction = reflect(unit_direction, surface_data.normal);
-    point = surface_data.point + surface_data.normal * 1e-4;
+    point = surface_data.point + surface_data.normal * 1e-6;
   }
   else {
     direction = refract(unit_direction, surface_data.normal, refraction_index);
-    point = surface_data.point - surface_data.normal * 1e-4;
+    point = surface_data.point - surface_data.normal * 1e-6;
   }
 
   return ScatterData(surface_data.material.albedo, Ray(point, direction));
@@ -398,7 +398,7 @@ float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
 
 ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
   vec3 N = surface_data.normal;
-  vec3 V = normalize(u_look_from - surface_data.point);
+  vec3 V = normalize(-ray.direction);
   vec3 L = random_unit_vector();
   if (dot(L, N) < 0.0) {
     L = -L;
@@ -414,7 +414,7 @@ ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
   float G = geometry_smith(N, V, L, surface_data.material.roughness);
 
   vec3 numerator = NDF * G * F;
-  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 1e-4;
+  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 1e-5;
   vec3 specular = numerator / denominator;
 
   vec3 ks = F;
@@ -425,7 +425,7 @@ ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
 
   vec3 attenuation = (kd * surface_data.material.albedo / g_pi + specular) * ndotl;
 
-  return ScatterData(attenuation, Ray(surface_data.point + N * 1e-4, L));
+  return ScatterData(attenuation, Ray(surface_data.point + N * 1e-6, L));
 }
 
 vec3 cast_ray(Ray ray) {
@@ -446,8 +446,11 @@ vec3 cast_ray(Ray ray) {
 
     SurfaceData surface_data = get_surface_data(ray, hit_record);
     // color = surface_data.normal * 0.5 + 0.5;
+    // break;
 
     if (near_zero(surface_data.material.emission, 1e-5)) {
+      // surface_data.material.roughness = clamp(surface_data.material.roughness, 0.3, 1.0);
+      // surface_data.material.metallic = 0.9;
       // ScatterData scatter_data = scatter_pbr(ray, surface_data);
       ScatterData scatter_data;
       if (surface_data.material.metallic > 0.5) {
