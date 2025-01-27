@@ -32,7 +32,6 @@ jobs:
           npm install
           npx vite build --base=/webgl-ray-tracer/
           cp -r assets dist
-          cp model-viewer.html dist
           mkdir dist/src
           cp -r src/shaders dist/src
 
