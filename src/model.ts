@@ -1,209 +1,113 @@
-import { load_text_file } from "./load-text-file";
-import { Texture } from "./texture";
+import { Box3, Color, Group, Material, Mesh, MeshPhongMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Object3DEventMap, Texture, Vector2, Vector3, Vector4 } from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OBJLoader } from "three/addons/loaders/OBJLoader.js";	
+import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
 
-import { Vector2, Vector3, Vector4 } from "three";
-
-export class Material {
-  texture_index: number;
-  albedo: Vector3;
-  emission: Vector3;
-  metallic: number;
-  roughness: number; 
-  transparency: number; 
-  refraction_index: number;
-
-  constructor(
-    texture_index: number = -1, 
-    albedo: Vector3 = new Vector3(1, 1, 1), 
-    emission: Vector3 = new Vector3(0, 0, 0),
-    metallic: number = 0,
-    roughness: number = 1,
-    transparency: number = 0,
-    refraction_index: number = 1) {
-    this.texture_index = texture_index;
-    this.albedo = albedo;
-    this.emission = emission;
-    this.metallic = metallic;
-    this.roughness = roughness;
-    this.transparency = transparency;
-    this.refraction_index = refraction_index;
-  }
-};
-
-export class Model {
-  positions: Vector3[] = [];
-  normals: Vector3[] = [];
-  uvs: Vector2[] = [];
-  materials: Material[] = [];
-  indices: Vector4[] = []; // x: position, y: uv, z: normal, w: material
-  textures: Texture[] = [];
-
-  static async import_obj(obj_dir: string, file_name: string) : Promise<Model> {
-    const obj_path = obj_dir + file_name;
-    const file = (await load_text_file(obj_path)).split("\n");
-    const model = new Model();
-    const materials: Map<string, Material> = new Map();
-    const textures: Map<string, number> = new Map();
-    
-    for (let i = 0; i < file.length; ++i) {
-      const line = file[i];
-      const tokens = line.split(" ");
-      if (tokens[0] === "mtllib") {
-        await Model.import_materials(obj_dir, tokens[1], model, materials, textures);
-      }
-      else if (tokens[0] === "v") {
-        model.positions.push(new Vector3(
-          parseFloat(tokens[1]),
-          parseFloat(tokens[2]),
-          parseFloat(tokens[3])
-        ));
-      } 
-      else if (tokens[0] === "vn") {
-        model.normals.push(new Vector3(
-          parseFloat(tokens[1]),
-          parseFloat(tokens[2]),
-          parseFloat(tokens[3])
-        ));
-      } 
-      else if (tokens[0] === "vt") {
-        model.uvs.push(new Vector2(
-          parseFloat(tokens[1]),
-          parseFloat(tokens[2])
-        ));
-      }
-      else if (tokens[0] === "usemtl") {
-        const material = materials.get(tokens[1]);
-        if (!material) {
-          throw new Error("Material must be defined before usemtl");
-        }
-        model.materials.push(material);
-      }
-      else if (tokens[0] === "f") {
-        if (model.materials.length === 0) {
-          throw new Error("usemtl must be defined before faces");
-        }
-        const vertices: Vector4[] = [];
-        for (let j = 1; j < tokens.length; ++j) {
-          const vertex_arr = tokens[j].split("/");
-          const vertex = new Vector4();
-          vertex.x = parseInt(vertex_arr[0]) - 1; // position
-          vertex.y = parseInt(vertex_arr[1]) - 1; // uv
-          vertex.z = parseInt(vertex_arr[2]) - 1; // normal
-          vertex.w = model.materials.length - 1;  // material
-          vertices.push(vertex);
-        }
-        for (let j = 1; j < vertices.length - 1; ++j) {
-          const a = vertices[0].clone();
-          const b = vertices[j].clone();
-          const c = vertices[j + 1].clone();
-          model.indices.push(a, b, c);
-        }
-      }
+export async function import_gltf(path: string) {
+  const loader = new GLTFLoader();
+  const gltf = await loader.loadAsync(path);
+  normalize_scale(gltf.scene);
+  move_to_origin(gltf.scene);
+  gltf.scene.updateMatrixWorld();
+  const meshes: Mesh[] = [];
+  gltf.scene.traverse(child => {
+    if (child instanceof Mesh) {
+      child.geometry.applyMatrix4(child.matrixWorld);
+      meshes.push(child);
     }
+  });
+  return meshes;
+}
 
-    const min = new Vector3(Infinity, Infinity, Infinity);
-    const max = new Vector3(-Infinity, -Infinity, -Infinity);
-    for (const position of model.positions) {
-      min.x = Math.min(min.x, position.x);
-      min.y = Math.min(min.y, position.y);
-      min.z = Math.min(min.z, position.z);
-      max.x = Math.max(max.x, position.x);
-      max.y = Math.max(max.y, position.y);
-      max.z = Math.max(max.z, position.z);
-    }
-    const center = min.clone().add(max).multiplyScalar(0.5);
-    const size = max.clone().sub(min);
-    const max_size = Math.max(size.x, size.y, size.z);
-    for (const position of model.positions) {
-      position.sub(center).divideScalar(max_size);
-    }
-
-    return model;
-  }
-
-  static async import_materials(obj_dir: string, file_name: string, o_model: Model, o_materials: Map<string, Material>, o_textures: Map<string, number>) {
-    const file = (await load_text_file(obj_dir + file_name)).split("\n");
-    let material_name: string | null = null;
-
-    for (let i = 0; i < file.length; ++i) {
-      const line = file[i];
-      const tokens = line.split(" ");
-      if (tokens[0] === "newmtl") {
-        material_name = tokens[1];
-        o_materials.set(material_name, new Material());
-      }
-      else if (tokens[0] === "map_Kd") {
-        const texture_path = obj_dir + tokens[1];
-        await Model.import_texture(texture_path, o_model, o_textures);
-        if (!material_name) {
-          throw new Error("newmtl must be defined before map_Kd");
-        }
-        const material = o_materials.get(material_name)!;
-        material.texture_index = o_textures.get(texture_path)!;
-      }
-      else if (tokens[0] === "Kd") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Kd");
-        }
-        const material = o_materials.get(material_name)!;
-        material.albedo = new Vector3(
-          parseFloat(tokens[1]),
-          parseFloat(tokens[2]),
-          parseFloat(tokens[3])
-        );
-      }
-      else if (tokens[0] === "Ke") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Ke");
-        }
-        const material = o_materials.get(material_name)!;
-        material.emission = new Vector3(
-          parseFloat(tokens[1]),
-          parseFloat(tokens[2]),
-          parseFloat(tokens[3])
-        );
-      }
-      else if (tokens[0] === "Pm") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Pm");
-        }
-        const material = o_materials.get(material_name)!;
-        material.metallic = parseFloat(tokens[1]);
-      }
-      else if (tokens[0] === "Pr") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Pf");
-        }
-        const material = o_materials.get(material_name)!;
-        material.roughness = parseFloat(tokens[1]);
-      }
-      else if (tokens[0] === "Tr" || tokens[0] === "d") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Tr");
-        }
-        const material = o_materials.get(material_name)!
-        material.transparency = parseFloat(tokens[1]);
-        if (tokens[0] === "d") {
-          material.transparency = 1 - material.transparency;
-        }
-      }
-      else if (tokens[0] === "Ni") {
-        if (!material_name) {
-          throw new Error("newmtl must be defined before Ni");
-        }
-        const material = o_materials.get(material_name)!;
-        material.refraction_index = parseFloat(tokens[1]);
-      }
+async function find_mtl_path(obj_path: string) {
+  const response = await fetch(obj_path);
+  const text = await response.text();
+  const lines = text.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('mtllib ')) {
+      return obj_path.replace(/\/[^\/]+$/, '/') + line.replace('mtllib ', '').trim();
     }
   }
+  return null;
+}
 
-  static async import_texture(texture_path: string, o_model: Model, o_textures: Map<string, number>) {
-    if (o_textures.has(texture_path)) {
-      return;
-    }
-    const texture = await Texture.from_file(texture_path);
-    const index = o_model.textures.length;
-    o_model.textures.push(texture);
-    o_textures.set(texture_path, index);
+export async function import_obj(path: string) {
+  const mtl_path = await find_mtl_path(path);
+
+  const obj_loader = new OBJLoader();
+  let mtl;
+
+  if (mtl_path) {
+    const mtl_loader = new MTLLoader();
+    mtl = await mtl_loader.loadAsync(mtl_path);
+    mtl.preload();
+    obj_loader.setMaterials(mtl);
   }
-};
+
+  const obj = await obj_loader.loadAsync(path);
+
+  if (mtl) {
+    obj.traverse(child => {
+      if (!(child instanceof Mesh)) {
+        return;
+      }
+      function to_physical(material) {
+        const info = mtl.materialsInfo[material.name];
+        const result = new MeshPhysicalMaterial();
+        result.ior = info.ni ? parseFloat(info.ni) : 1.5;
+        result.color = info.kd ? new Color().fromArray(info.kd) : new Color(1, 1, 1);
+        result.emissive = info.ke ? new Color().fromArray(info.ke) : new Color(0, 0, 0);
+        result.opacity = material.opacity;
+        result.transparent = material.transparent;
+        result.map = material.map;
+        result.metalness = info.pm ? parseFloat(info.pm) : 0;
+        result.roughness = info.pr ? parseFloat(info.pr) : 1;
+        return result;
+      }
+      if (child.material instanceof Material) {
+        child.material = to_physical(child.material);
+      }
+      else {
+        for (let i = 0; i < child.material.length; ++i) {
+          if (child.material[i] instanceof Material) {
+            child.material[i] = to_physical(child.material[i]);
+          }
+        } 
+      }
+    });
+  }
+
+  normalize_scale(obj);
+  move_to_origin(obj);
+  obj.updateMatrixWorld();
+  const meshes: Mesh[] = [];
+  obj.traverse(child => {
+    if (child instanceof Mesh) {
+      child.geometry.applyMatrix4(child.matrixWorld);
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach(material => {
+        material.emissive.r *= material.emissiveIntensity;
+        material.emissive.g *= material.emissiveIntensity;
+        material.emissive.b *= material.emissiveIntensity;
+        material.emissiveIntensity = 1;
+      });
+      meshes.push(child);
+    }
+  });
+  return meshes;
+}
+
+function normalize_scale(object: Group<Object3DEventMap>) {
+  const box = new Box3().setFromObject(object);
+  const size = new Vector3();
+  box.getSize(size);
+  const max = Math.max(size.x, size.y, size.z);
+  object.scale.setScalar(1 / max);
+}
+
+function move_to_origin(object: Group<Object3DEventMap>) {
+  const box = new Box3().setFromObject(object);
+  const center = new Vector3();
+  box.getCenter(center);
+  object.position.copy(center).negate();
+}

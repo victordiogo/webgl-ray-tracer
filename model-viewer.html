@@ -69,16 +69,17 @@
     <span id="fov"></span></br>
     <span id="focus-distance"></span></br>
     <span id="defocus-angle"></span></br>
+    Depth: <input type="number" id="depth" value="3"></br>
     Background: <input type="color" id="background-color" value="#000000"></br>
     Model:  
     <select id="model">
-      <option value="cornell-box">Cornell Box</option>
-      <option value="chicken">Chicken</option>
-      <option value="cornell-box-sphere">Cornell Box (Spheres)</option>
-      <option value="man">Man</option>
-      <option value="car">Car</option>
-      <option value="porsche">Porsche</option>
-      <option value="sponza">Sponza</option>
+      <option value="assets/models/cornell-box/cornell-box.obj">Cornell Box</option>
+      <option value="assets/models/chicken/chicken.obj">Chicken</option>
+      <option value="assets/models/cornell-box-sphere/cornell-box-sphere.obj">Cornell Box (Spheres)</option>
+      <option value="assets/models/man/man.obj">Man</option>
+      <option value="assets/models/car/car.obj">Car</option>
+      <option value="assets/models/porsche/porsche.obj">Porsche</option>
+      <option value="assets/models/sponza/sponza.obj">Sponza</option>
     </select>
   </div>
   <button id="menu-button">?</button>
@@ -103,10 +104,12 @@
     });
 
     document.getElementById('model').addEventListener('change', (event) => {
-      const model = event.target.value;
-      const obj_dir = "assets/models/" + model + "/";
-      const file_name = model + ".obj";
-      dispatchEvent(new CustomEvent('model-change', { detail: { obj_dir, file_name } }));
+      const path = event.target.value;
+      dispatchEvent(new CustomEvent('model-change', { detail: { path } }));
+    });
+
+    document.getElementById('depth').addEventListener('input', (event) => {
+      dispatchEvent(new CustomEvent('depth-input', { detail: { depth: event.target.value } }));
     });
 
     document.getElementById('background-color').addEventListener('input', (event) => {

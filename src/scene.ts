@@ -1,10 +1,35 @@
 import { Bvh } from "./bvh";
-import { Material, Model } from "./model";
 
-import { Vector4 } from "three";
+import { Mesh, Vector2, Vector3, Vector4, MeshStandardMaterial, MeshPhongMaterial, MeshPhysicalMaterial, BufferAttribute, Material, Texture } from "three";
+
+function get_texture_data(texture: Texture, width: number, height: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Failed to get 2d context');
+  }
+  if (texture.flipY) {
+    // flip image vertically
+    context.translate(0, height);
+    context.scale(1, -1);
+  }
+  context.drawImage(texture.image, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height).data;
+}
+
+class SceneData {
+  positions: Vector3[] = [];
+  normals: Vector3[] = [];
+  uvs: Vector2[] = [];
+  materials: MeshStandardMaterial[] = [];
+  indices: Vector4[] = []; // x: position, y: uv, z: normal, w: material
+  textures: Texture[] = [];
+};
 
 export class Scene {
-  models: Model[] = [];
+  meshes: Mesh[] = [];
   gl: WebGL2RenderingContext;
   positions: WebGLTexture; 
   normals: WebGLTexture;
@@ -19,45 +44,138 @@ export class Scene {
     this.gl = gl
   }
 
-  add(model: Model) : void {
-    this.models.push(model);
+  add(...meshes: Mesh[]) : void {
+    this.meshes.push(...meshes);
   }
 
-  merge_models() : Model {
-    const merged = new Model();
+  merge_meshes() {
+    const merged = new SceneData();
 
-    for (const model of this.models) {
-      model.indices.forEach(i => {
-        const pos_index = i.x + merged.positions.length;
-        const uv_index = i.y + merged.uvs.length;
-        const normal_index = i.z + merged.normals.length;
-        const material_index = i.w + merged.materials.length;
-        merged.indices.push(new Vector4(pos_index, uv_index, normal_index, material_index));
-      });
-      model.positions.forEach(p => {
-        merged.positions.push(p.clone());
-      });
-      model.normals.forEach(n => {
-        merged.normals.push(n.clone())
-      });
-      model.uvs.forEach(uv => {
-        merged.uvs.push(uv.clone())
-      });
-      model.materials.forEach(m => {
-        let texture_index = m.texture_index;
-        if (texture_index !== -1) {
-          texture_index += merged.textures.length;
+    for (const mesh of this.meshes) {
+      const position = mesh.geometry.getAttribute('position');
+      const normal = mesh.geometry.getAttribute('normal');
+      const uv = mesh.geometry.getAttribute('uv');
+      const index = mesh.geometry.getIndex();
+
+      const materials: MeshStandardMaterial[] = [];
+      if (mesh.material instanceof MeshStandardMaterial) {
+        materials.push(mesh.material);
+      }
+      else if (mesh.material instanceof Array) {
+        materials.push(...mesh.material.filter(m => m instanceof MeshStandardMaterial));
+      }
+
+      materials.forEach(m => {
+        if (m.map) {
+          merged.textures.push(m.map);
+          m.userData.albedo_index = merged.textures.length - 1;
         }
-        merged.materials.push({ ...m, texture_index });
+        else {
+          m.userData.albedo_index = -1;
+        }
+
+        if (m.normalMap) {
+          merged.textures.push(m.normalMap);
+          m.userData.normal_index = merged.textures.length - 1;
+        }
+        else {
+          m.userData.normal_index = -1;
+        }
+
+        if (m.roughnessMap) {
+          merged.textures.push(m.roughnessMap);
+          m.userData.roughness_index = merged.textures.length - 1;
+        }
+        else {
+          m.userData.roughness_index = -1;
+        }
+
+        if (m.metalnessMap) {
+          merged.textures.push(m.metalnessMap);
+          m.userData.metallic_index = merged.textures.length - 1;
+        }
+        else {
+          m.userData.metallic_index = -1;
+        }
+
+        if (m.emissiveMap) {
+          merged.textures.push(m.emissiveMap);
+          m.userData.emission_index = merged.textures.length - 1;
+        }
+        else {
+          m.userData.emission_index = -1;
+        }
+
+        merged.materials.push(m);
       });
-      merged.textures.push(...model.textures);
+
+      if (merged.materials.length === 0) {
+        merged.materials.push(new MeshStandardMaterial());
+      }
+
+      if (mesh.geometry.groups.length === 0) {
+        if (index) {
+          mesh.geometry.addGroup(0, index.count, 0);
+        }
+        else {
+          mesh.geometry.addGroup(0, position.count, 0);
+        }
+      }
+
+      if (index) {
+        for (let group = 0; group < mesh.geometry.groups.length; ++group) {
+          const start = mesh.geometry.groups[group].start;
+          const count = mesh.geometry.groups[group].count;
+          for (let i = start; i < start + count; ++i) {
+            const idx = index.getX(i);
+            const material_index = merged.materials.length - mesh.geometry.groups.length + (mesh.geometry.groups[group].materialIndex || group);
+            merged.indices.push(new Vector4(
+              idx + merged.positions.length, 
+              idx + merged.uvs.length, 
+              idx + merged.normals.length, 
+              material_index)
+            );
+          }
+        }
+      }
+      else {
+        for (let group = 0; group < mesh.geometry.groups.length; ++group) {
+          const start = mesh.geometry.groups[group].start;
+          const count = mesh.geometry.groups[group].count;
+          for (let i = start; i < start + count; ++i) {
+            const material_index = merged.materials.length - mesh.geometry.groups.length + (mesh.geometry.groups[group].materialIndex || group);
+            merged.indices.push(new Vector4(
+              i + merged.positions.length, 
+              i + merged.uvs.length, 
+              i + merged.normals.length, 
+              material_index)
+            );
+          }
+        }
+      }
+
+      for (let i = 0; i < position.count; ++i) {
+        merged.positions.push(new Vector3().fromBufferAttribute(position, i));
+      }
+
+      for (let i = 0; i < normal.count; ++i) {
+        merged.normals.push(new Vector3().fromBufferAttribute(normal, i));
+      }
+
+      if (uv) {
+        for (let i = 0; i < uv.count; ++i) {
+          merged.uvs.push(new Vector2().fromBufferAttribute(uv as BufferAttribute, i));
+        }
+      }
     }
     
     return merged;
   }
   
   update() {
-    const merged = this.merge_models();
+    // cleanup last scene
+    
+    const merged = this.merge_meshes();
     const bvh = new Bvh(merged);
 
     this.bvh_length = bvh.list.length;
@@ -104,11 +222,25 @@ export class Scene {
     
     this.materials = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
-    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length * 3);
-    const materials_height = Math.ceil(merged.materials.length * 3 / materials_width);
+    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length * 4);
+    const materials_height = Math.ceil(merged.materials.length * 4 / materials_width);
     data = new Float32Array(materials_width * materials_height * 4);
     merged.materials.forEach((m, i) => {
-      data.set([m.texture_index, ...m.albedo, ...m.emission, m.metallic, m.roughness, m.transparency, m.refraction_index, 0], i * 12)
+      const ei = m.emissiveIntensity;
+      data.set([
+        m.userData.albedo_index, 
+        m.userData.roughness_index,
+        m.userData.metallic_index,
+        m.userData.normal_index,
+        m.userData.emission_index,
+        ...m.color.toArray(), 
+        m.emissive.r * ei, m.emissive.g * ei, m.emissive.b * ei, 
+        m.metalness, 
+        m.roughness, 
+        m.transparent ? 1 : 1 - m.opacity,
+        m['ior'] || 1.5,
+        0
+      ], i * 4 * 4)
     });
     this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, materials_width, materials_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
@@ -138,7 +270,7 @@ export class Scene {
       this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
       this.gl.texStorage3D(this.gl.TEXTURE_2D_ARRAY, 1, this.gl.RGBA8, max_width, max_height, merged.textures.length);
       merged.textures.forEach((t, i) => {
-        this.gl.texSubImage3D(this.gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, this.gl.RGBA, this.gl.UNSIGNED_BYTE, t.data(max_width, max_height));
+        this.gl.texSubImage3D(this.gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, this.gl.RGBA, this.gl.UNSIGNED_BYTE, get_texture_data(t, max_width, max_height));
       });
       this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
       this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);

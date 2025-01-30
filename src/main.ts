@@ -1,9 +1,9 @@
 import { Camera } from './camera.js';
 import KeyboardState from '../lib/keyboard-state.js';
 
-import { Vector3 } from 'three';
+import { Vector3, Scene as TreeScene, WebGLRenderer, PerspectiveCamera, DirectionalLight, AmbientLight } from 'three';
 import { RayTracingRenderer } from './ray-tracing-renderer.js';
-import { Model } from './model.js';
+import { import_gltf, import_obj } from './model.js';
 import { Scene } from './scene.js';
 
 main().catch(e => {
@@ -12,24 +12,58 @@ main().catch(e => {
 })
 
 async function main() {
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 7);
+  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 4);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 90, 0, 3, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 10, 0);
+  const camera = new Camera(renderer.gl, 90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 1.5, 0);
+
+  const tree_renderer = new WebGLRenderer({ antialias: true });
+  tree_renderer.setSize(innerWidth, innerHeight);
+  // document.body.appendChild(tree_renderer.domElement);
+
+  const tree_scene = new TreeScene();
+  const dir_light = new DirectionalLight(0xffffff, 1);
+  dir_light.position.set(1, 1, 1);
+  tree_scene.add(dir_light);
+  tree_scene.add(new AmbientLight(0xffffff, 0.5));
   
-  let model = await Model.import_obj('assets/models/cornell-box/', 'cornell-box.obj');
+  let model = await import_gltf('assets/models/cyber-samurai.glb');
   console.log(model);
 
-  let scene = new Scene(renderer.gl);
-  scene.add(model);
-  scene.update();
+  // tree_scene.add(model);
+  model.forEach(mesh => {
+    tree_scene.add(mesh);
+  });
 
+  const tree_camera = new PerspectiveCamera(90, innerWidth / innerHeight, 0.1, 1000);
+  tree_camera.position.set(0, 0, 4);
+
+  tree_renderer.domElement.addEventListener('mousemove', e => {
+    if (e.buttons !== 1) {
+      tree_renderer.domElement.style.cursor = 'grab';
+      return;
+    }
+    tree_renderer.domElement.style.cursor = 'grabbing';
+    tree_camera.rotation.y += 0.01 * e.movementX;
+    tree_camera.rotation.x += 0.01 * e.movementY;
+  });
+  
+  let scene = new Scene(renderer.gl);
+  scene.add(...model);
+  scene.update();
+  
   const keyboard = new KeyboardState();
   
   renderer.canvas.addEventListener('mousemove', e => process_mouse_move(e, renderer, camera));
   renderer.canvas.addEventListener('mousewheel', e => process_mouse_wheel(e as WheelEvent, renderer, camera));
-
+  
   addEventListener('resize', () => resize(renderer, camera));
+
+  addEventListener('depth-input', (event) => {
+    const customEvent = event as CustomEvent;
+    renderer.max_depth = customEvent.detail.depth;
+    renderer.reset_sampling();
+  });
 
   addEventListener('background-color-input', (event) => {
     const customEvent = event as CustomEvent;
@@ -46,35 +80,44 @@ async function main() {
   scene_cache.set('cornell-box.obj', scene);
   addEventListener('model-change', async (event) => {
     const customEvent = event as CustomEvent;
-    if (scene_cache.has(customEvent.detail.file_name)) {
-      scene = scene_cache.get(customEvent.detail.file_name)!;
+    const path = customEvent.detail.path;
+    if (scene_cache.has(path)) {
+      scene = scene_cache.get(path)!;
     }
     else {
-      model = await Model.import_obj(customEvent.detail.obj_dir, customEvent.detail.file_name);
+      if (path.endsWith('.gltf') || path.endsWith('.glb')) {
+        model = await import_gltf(path);
+      }
+      else if (path.endsWith('.obj')) {
+        model = await import_obj(path);
+      }
+      console.log(model)
       scene = new Scene(renderer.gl);
-      scene.add(model);
+      scene.add(...model);
       scene.update();
-      scene_cache.set(customEvent.detail.file_name, scene);
+      scene_cache.set(path, scene);
     }
     renderer.reset_sampling();
   });
-
+  
   let last_time = performance.now();
   let last_avg_time = last_time;
   let frame_count = 0;
-
+  
   document.getElementById('fps')!.innerText = "FPS: 0";
-
+  
   const render = () => {
     const current_time = performance.now();
     const frame_time = current_time - last_time;
     last_time = current_time;
     ++frame_count;
-
+    
+    keyboard.pressed('W') && tree_camera.translateZ(-0.1);
     process_keyboard_input(keyboard, renderer, camera, frame_time);
-
+    
     renderer.render(camera, scene);
-
+    tree_renderer.render(tree_scene, tree_camera);
+    
     const diff_time = current_time - last_avg_time;
     if (diff_time > 1000) {
       const avg_fps = frame_count / (diff_time / 1000);
@@ -83,14 +126,18 @@ async function main() {
       frame_count = 0;  
     }
     document.getElementById('samples')!.innerText = "Samples: " + renderer.sample_count;
-    document.getElementById('triangles')!.innerText = "Triangles: " + scene.models.reduce((acc, model) => acc + model.indices.length / 3, 0);
+    document.getElementById('triangles')!.innerText = "Triangles: " + scene.meshes.reduce((acc, model) => {
+      const index = model.geometry.getIndex();
+      const position = model.geometry.getAttribute('position');
+      return acc + (index ? index.count / 3 : position.count / 3);
+    }, 0);
     document.getElementById('fov')!.innerText = "FOV: " + camera.vfov.toFixed(2) + "°";
     document.getElementById('focus-distance')!.innerText = "Focus Distance: " + camera.focus_distance.toFixed(2);
     document.getElementById('defocus-angle')!.innerText = "Defocus Angle: " + camera.defocus_angle.toFixed(2) + "°";
-
+    
     requestAnimationFrame(render);
   }
-
+  
   render();
 }
 
@@ -116,11 +163,11 @@ function process_keyboard_input(keyboard: KeyboardState, renderer: RayTracingRen
     renderer.reset_sampling();
   }
   if (keyboard.pressed('D')) {
-    camera.focus_distance += 0.02 * frame_time;
+    camera.focus_distance += 0.002 * frame_time;
     renderer.reset_sampling();
   }
   if (keyboard.pressed('A')) {
-    camera.focus_distance -= 0.02 * frame_time;
+    camera.focus_distance -= 0.002 * frame_time;
     if (camera.focus_distance < 0.1) {
       camera.focus_distance = 0.1;
     }
