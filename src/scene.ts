@@ -23,7 +23,7 @@ class SceneData {
   positions: Vector3[] = [];
   normals: Vector3[] = [];
   uvs: Vector2[] = [];
-  materials: MeshStandardMaterial[] = [];
+  materials: Material[] = [];
   indices: Vector4[] = []; // x: position, y: uv, z: normal, w: material
   textures: Texture[] = [];
 };
@@ -57,49 +57,49 @@ export class Scene {
       const uv = mesh.geometry.getAttribute('uv');
       const index = mesh.geometry.getIndex();
 
-      const materials: MeshStandardMaterial[] = [];
-      if (mesh.material instanceof MeshStandardMaterial) {
+      const materials: Material[] = [];
+      if (mesh.material instanceof Material) {
         materials.push(mesh.material);
       }
       else if (mesh.material instanceof Array) {
-        materials.push(...mesh.material.filter(m => m instanceof MeshStandardMaterial));
+        materials.push(...mesh.material);
       }
 
       materials.forEach(m => {
-        if (m.map) {
-          merged.textures.push(m.map);
+        if (m["map"]) {
+          merged.textures.push(m["map"]);
           m.userData.albedo_index = merged.textures.length - 1;
         }
         else {
           m.userData.albedo_index = -1;
         }
 
-        if (m.normalMap) {
-          merged.textures.push(m.normalMap);
+        if (m["normalMap"]) {
+          merged.textures.push(m["normalMap"]);
           m.userData.normal_index = merged.textures.length - 1;
         }
         else {
           m.userData.normal_index = -1;
         }
 
-        if (m.roughnessMap) {
-          merged.textures.push(m.roughnessMap);
+        if (m["roughnessMap"]) {
+          merged.textures.push(m["roughnessMap"]);
           m.userData.roughness_index = merged.textures.length - 1;
         }
         else {
           m.userData.roughness_index = -1;
         }
 
-        if (m.metalnessMap) {
-          merged.textures.push(m.metalnessMap);
-          m.userData.metallic_index = merged.textures.length - 1;
+        if (m["metalnessMap"]) {
+          merged.textures.push(m["metalnessMap"]);
+          m.userData.metalness_index = merged.textures.length - 1;
         }
         else {
-          m.userData.metallic_index = -1;
+          m.userData.metalness_index = -1;
         }
 
-        if (m.emissiveMap) {
-          merged.textures.push(m.emissiveMap);
+        if (m["emissiveMap"]) {
+          merged.textures.push(m["emissiveMap"]);
           m.userData.emission_index = merged.textures.length - 1;
         }
         else {
@@ -226,17 +226,23 @@ export class Scene {
     const materials_height = Math.ceil(merged.materials.length * 4 / materials_width);
     data = new Float32Array(materials_width * materials_height * 4);
     merged.materials.forEach((m, i) => {
-      const ei = m.emissiveIntensity;
+      const albedo = m["color"] || new Vector3(1, 1, 1);
+      const ei = m["emissiveIntensity"] !== undefined ? m["emissiveIntensity"] : 1;
+      const emissive = m["emissive"] || new Vector3(0, 0, 0);
+      emissive.multiplyScalar(ei);
+      const metalness = m["metalness"] !== undefined ? m["metalness"] : 0;
+      const roughness = m["roughness"] !== undefined ? m["roughness"] : 1;
+
       data.set([
         m.userData.albedo_index, 
         m.userData.roughness_index,
-        m.userData.metallic_index,
+        m.userData.metalness_index,
         m.userData.normal_index,
         m.userData.emission_index,
-        ...m.color.toArray(), 
-        m.emissive.r * ei, m.emissive.g * ei, m.emissive.b * ei, 
-        m.metalness, 
-        m.roughness, 
+        ...albedo.toArray(), 
+        ...emissive.toArray(), 
+        metalness, 
+        roughness, 
         m.transparent ? 1 : 1 - m.opacity,
         m['ior'] || 1.5,
         0
@@ -280,32 +286,32 @@ export class Scene {
   }
 
   use(program: WebGLProgram) {
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_positions"), 1);
-    this.gl.activeTexture(this.gl.TEXTURE1);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_positions"), 2);
+    this.gl.activeTexture(this.gl.TEXTURE2);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.positions);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_normals"), 2);
-    this.gl.activeTexture(this.gl.TEXTURE2);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_normals"), 3);
+    this.gl.activeTexture(this.gl.TEXTURE3);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.normals);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_uvs"), 3);
-    this.gl.activeTexture(this.gl.TEXTURE3);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_uvs"), 4);
+    this.gl.activeTexture(this.gl.TEXTURE4);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.uvs);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_materials"), 4);
-    this.gl.activeTexture(this.gl.TEXTURE4);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_materials"), 5);
+    this.gl.activeTexture(this.gl.TEXTURE5);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_indices"), 5);
-    this.gl.activeTexture(this.gl.TEXTURE5);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_indices"), 6);
+    this.gl.activeTexture(this.gl.TEXTURE6);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh"), 6);
-    this.gl.activeTexture(this.gl.TEXTURE6);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh"), 7);
+    this.gl.activeTexture(this.gl.TEXTURE7);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
 
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_textures"), 7);
-    this.gl.activeTexture(this.gl.TEXTURE7);
+    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_textures"), 8);
+    this.gl.activeTexture(this.gl.TEXTURE8);
     this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
 
     this.gl.uniform1i(this.gl.getUniformLocation(program, "u_max_texture_size"), this.gl.MAX_TEXTURE_SIZE);

@@ -1,10 +1,9 @@
 import { Camera } from "./camera";
-import { Model } from "./model";
 import { Scene } from "./scene";
 import { create_shader_program } from "./shader-program";
 import { SwapFramebuffer } from "./swap-framebuffer";
 
-import { Vector3 } from "three";
+import { Texture } from "three";
 
 export class RayTracingRenderer {
   canvas: HTMLCanvasElement;
@@ -13,12 +12,13 @@ export class RayTracingRenderer {
   ray_tracing_program: WebGLProgram;
   screen_quad_program: WebGLProgram;
   screen_quad_vao: WebGLVertexArrayObject;
-  background_color: Vector3;
+  environment: WebGLTexture | null;
+  environment_intensity: number;
   sample_count: number;
   max_depth: number;
   texture_32f: boolean;
 
-  constructor(width: number, height: number, max_depth: number) {
+  constructor(width: number, height: number, max_depth: number, environment: Texture, environment_intensity: number = 1) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = width;
     this.canvas.height = height;
@@ -29,14 +29,27 @@ export class RayTracingRenderer {
     if (!gl.getExtension('EXT_color_buffer_float')) {
       throw new Error('EXT_color_buffer_float is not supported');
     }
-    this.texture_32f = !!gl.getExtension('OES_texture_float_linear');
     this.gl = gl;
     this.gl.viewport(0, 0, width, height);
-    this.swap_framebuffer = new SwapFramebuffer(gl, width, height, this.texture_32f);
+    this.swap_framebuffer = new SwapFramebuffer(gl, width, height);
     this.screen_quad_vao = this.create_screen_quad(gl);
-    this.background_color = new Vector3(0, 0, 0);
     this.sample_count = 0;
     this.max_depth = max_depth;
+    this.environment = null;
+    this.environment_intensity = environment_intensity;
+    this.set_environment(environment);
+  }
+
+  set_environment(environment: Texture) {
+    this.gl.deleteTexture(this.environment);
+    this.environment = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.environment);
+    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, environment.image.width, environment.image.height, 0, this.gl.RGBA, this.gl.FLOAT, environment.image.data);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT);
+    this.reset_sampling();
   }
 
   async compile_shaders() {
@@ -59,7 +72,10 @@ export class RayTracingRenderer {
       this.gl.bindTexture(this.gl.TEXTURE_2D, this.swap_framebuffer.offscreen_texture);
       this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_sample_count'), this.sample_count);
       this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_max_depth'), this.sample_count == 1 ? 2 : this.max_depth);
-      this.gl.uniform3fv(this.gl.getUniformLocation(this.ray_tracing_program, 'u_background_color'), this.background_color.toArray());
+      this.gl.uniform1f(this.gl.getUniformLocation(this.ray_tracing_program, 'u_environment_intensity'), this.environment_intensity);
+      this.gl.uniform1i(this.gl.getUniformLocation(this.ray_tracing_program, 'u_environment'), 1);
+      this.gl.activeTexture(this.gl.TEXTURE1);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.environment);
       camera.use(this.ray_tracing_program);
       scene.use(this.ray_tracing_program);
     this.gl.bindVertexArray(this.screen_quad_vao);
@@ -82,12 +98,12 @@ export class RayTracingRenderer {
     this.canvas.height = height;
     this.gl.viewport(0, 0, width, height);
     this.swap_framebuffer.destroy();
-    this.swap_framebuffer = new SwapFramebuffer(this.gl, width, height, this.texture_32f);
+    this.swap_framebuffer = new SwapFramebuffer(this.gl, width, height);
     this.sample_count = 0;
   }
 
   create_screen_quad(gl: WebGL2RenderingContext): WebGLVertexArrayObject {
-    const quad_verts = [-1, -1, 1, -1, 1, 1, -1, -1, 1,  1, -1, 1];
+    const quad_verts = [-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1];
     const vao = gl.createVertexArray();
     const vbo = gl.createBuffer();
     gl.bindVertexArray(vao);

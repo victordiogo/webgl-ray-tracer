@@ -69,17 +69,23 @@
     <span id="fov"></span></br>
     <span id="focus-distance"></span></br>
     <span id="defocus-angle"></span></br>
-    Depth: <input type="number" id="depth" value="3"></br>
-    Background: <input type="color" id="background-color" value="#000000"></br>
+    Depth (<strong id="depth-value">3</strong>):<br/>
+    <input type="range" id="depth" min="2" max="16" value="3"></br>
+    Environment:
+    <select id="environment">
+      <option value="assets/environments/lost-city.hdr">Lost City</option>
+    </select></br>
+    Environment Intensity (<strong id="env-intensity-value">1</strong>):<br/>
+    <input type="range" id="environment-intensity" min="0" max="10000" step="0.01" value="1"></br>
     Model:  
     <select id="model">
       <option value="assets/models/cornell-box/cornell-box.obj">Cornell Box</option>
-      <option value="assets/models/chicken/chicken.obj">Chicken</option>
       <option value="assets/models/cornell-box-sphere/cornell-box-sphere.obj">Cornell Box (Spheres)</option>
-      <option value="assets/models/man/man.obj">Man</option>
-      <option value="assets/models/car/car.obj">Car</option>
-      <option value="assets/models/porsche/porsche.obj">Porsche</option>
-      <option value="assets/models/sponza/sponza.obj">Sponza</option>
+      <option value="assets/models/skull.glb">Skull</option>
+      <option value="assets/models/cyber-samurai.glb">Cyber Samurai</option>
+      <option value="assets/models/porsche-911.glb">Porsche 911</option>
+      <option value="assets/models/porsche-carrera.glb">Porsche Carrera</option>
+      <option value="assets/models/datsun-240k-gt.glb">Datsun 240k GT</option>
     </select>
   </div>
   <button id="menu-button">?</button>
@@ -110,10 +116,36 @@
 
     document.getElementById('depth').addEventListener('input', (event) => {
       dispatchEvent(new CustomEvent('depth-input', { detail: { depth: event.target.value } }));
+      document.getElementById('depth-value').textContent = event.target.value;
     });
 
-    document.getElementById('background-color').addEventListener('input', (event) => {
-      dispatchEvent(new CustomEvent('background-color-input', { detail: { color: event.target.value } }));
+    document.getElementById('environment').addEventListener('change', (event) => {
+      const path = event.target.value;
+      dispatchEvent(new CustomEvent('environment-change', { detail: { path } }));
+    });
+
+    document.getElementById('environment-intensity').addEventListener('input', (event) => {
+      dispatchEvent(new CustomEvent('environment-intensity-input', { detail: { intensity: event.target.value } }));
+      document.getElementById('env-intensity-value').textContent = event.target.value;
+      if (event.target.value > 1000) {
+        event.target.step = 1000;
+      }
+      else if (event.target.value > 100) {
+        event.target.step = 100;
+      }
+      else if (event.target.value > 10) {
+        event.target.step = 10;
+      }
+      else if (event.target.value > 1) {
+        event.target.step = 1;
+        console.log('step', event.target.step);
+      }
+      else if (event.target.value > 0.1) {
+        event.target.step = 0.1;
+      }
+      else {
+        event.target.step = 0.01;
+      }
     });
   </script>
   <script type="module" src="src/main.ts"></script>

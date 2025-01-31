@@ -7,7 +7,8 @@ precision highp sampler2DArray;
 
 // renderer
 uniform sampler2D u_prev_color;
-uniform vec3 u_background_color;
+uniform sampler2D u_environment;
+uniform float u_environment_intensity;
 uniform int u_sample_count;
 uniform int u_max_depth;
 // scene
@@ -254,12 +255,12 @@ struct ScatterData {
 struct Material {
   int albedo_index;
   int roughness_index;
-  int metallic_index;
+  int metalness_index;
   int normal_index;
   int emission_index;
   vec3 albedo;
   vec3 emission;
-  float metallic;
+  float metalness;
   float roughness;
   float transparency;
   float refraction_index;
@@ -377,12 +378,12 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
     data.material.albedo = texture(u_textures, vec3(data.uv, data.material.albedo_index)).xyz;
   }
 
-  if (data.material.metallic_index != -1) {
-    data.material.metallic = texture(u_textures, vec3(data.uv, data.material.metallic_index)).x;
+  if (data.material.roughness_index != -1) {
+    data.material.roughness = texture(u_textures, vec3(data.uv, data.material.roughness_index)).g;
   }
 
-  if (data.material.roughness_index != -1) {
-    data.material.roughness = texture(u_textures, vec3(data.uv, data.material.roughness_index)).x;
+  if (data.material.metalness_index != -1) {
+    data.material.metalness = texture(u_textures, vec3(data.uv, data.material.metalness_index)).b;
   }
 
   // if (data.material.normal_index != -1) {
@@ -445,7 +446,7 @@ ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
 
   vec3 H = normalize(L + V);
 
-  vec3 f0 = mix(vec3(0.04), surface_data.material.albedo, surface_data.material.metallic);
+  vec3 f0 = mix(vec3(0.04), surface_data.material.albedo, surface_data.material.metalness);
   vec3 F = fresnel_schlick(clamp(dot(H, V), 0.0, 1.0), f0);
 
   float NDF = distribution_ggx(N, H, surface_data.material.roughness);
@@ -457,13 +458,19 @@ ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
 
   vec3 ks = F;
   vec3 kd = vec3(1.0) - ks;
-  kd *= 1.0 - surface_data.material.metallic;
+  kd *= 1.0 - surface_data.material.metalness;
 
   float ndotl = max(dot(N, L), 0.0);
 
   vec3 attenuation = (kd * surface_data.material.albedo / g_pi + specular) * ndotl;
 
   return ScatterData(attenuation, Ray(surface_data.point + N * g_scatter_bias, L));
+}
+
+vec3 texture_environment(vec3 direction) {
+  direction = normalize(direction);
+  vec2 uv = vec2(0.5 - atan(direction.z, direction.x) / (2.0 * g_pi), 0.5 - asin(clamp(direction.y, -1.0, 1.0)) / g_pi);
+  return texture(u_environment, uv).xyz * u_environment_intensity;
 }
 
 vec3 cast_ray(Ray ray) {
@@ -482,12 +489,16 @@ vec3 cast_ray(Ray ray) {
     HitRecord hit_record;
 
     if (!trace(ray, hit_record)) {
-      color *= u_background_color * 3.0;
+      color *= texture_environment(ray.direction);
       break;
     }
 
     SurfaceData surface_data = get_surface_data(ray, hit_record);
     // color = surface_data.normal * 0.5 + 0.5;
+    // color = surface_data.material.albedo;
+    // color = surface_data.material.emission;
+    // color = surface_data.material.roughness * vec3(1.0);
+    // color = surface_data.material.metalness * vec3(1.0);
     // break;
 
     if (!near_zero(surface_data.material.emission, 1e-3)) {
@@ -495,19 +506,17 @@ vec3 cast_ray(Ray ray) {
       break;
     }
 
-    // surface_data.material.roughness = clamp(surface_data.material.roughness, 0.3, 1.0);
-    // surface_data.material.metallic = 0.9;
-    ScatterData scatter_data = scatter_pbr(ray, surface_data);
-    // ScatterData scatter_data;
-    // if (surface_data.material.transparency > 0.5) {
-    //   scatter_data = scatter_dielectric(ray, surface_data);
-    // }
-    // else if (surface_data.material.metallic > 0.5) {
-    //   scatter_data = scatter_metal(ray, surface_data);
-    // }
-    // else {
-    //   scatter_data = scatter_lambertian(surface_data);
-    // }
+    // ScatterData scatter_data = scatter_pbr(ray, surface_data);
+    ScatterData scatter_data;
+    if (surface_data.material.transparency > 0.1) {
+      scatter_data = scatter_dielectric(ray, surface_data);
+    }
+    else if (surface_data.material.metalness > 0.1) {
+      scatter_data = scatter_metal(ray, surface_data);
+    }
+    else {
+      scatter_data = scatter_lambertian(surface_data);
+    }
     color *= scatter_data.attenuation;
     ray = scatter_data.scattered;
   }

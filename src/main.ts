@@ -1,18 +1,26 @@
 import { Camera } from './camera.js';
 import KeyboardState from '../lib/keyboard-state.js';
 
-import { Vector3, Scene as TreeScene, WebGLRenderer, PerspectiveCamera, DirectionalLight, AmbientLight } from 'three';
+import { Vector3, Scene as TreeScene, WebGLRenderer, PerspectiveCamera, DirectionalLight, AmbientLight, FloatType } from 'three';
 import { RayTracingRenderer } from './ray-tracing-renderer.js';
 import { import_gltf, import_obj } from './model.js';
 import { Scene } from './scene.js';
+import { RGBELoader } from 'three/examples/jsm/Addons.js';
 
 main().catch(e => {
   document.body.innerText = e.message;
   console.error(e);
-})
+});
+
+async function load_hdr(path: string) {
+  const loader = new RGBELoader().setDataType(FloatType);
+  return await loader.loadAsync(path);
+}
 
 async function main() {
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 4);
+  const environment = await load_hdr('assets/environments/lost-city.hdr');
+
+  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 4, environment);
   await renderer.compile_shaders();
   document.body.appendChild(renderer.canvas);
   const camera = new Camera(renderer.gl, 90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 1.5, 0);
@@ -27,7 +35,7 @@ async function main() {
   tree_scene.add(dir_light);
   tree_scene.add(new AmbientLight(0xffffff, 0.5));
   
-  let model = await import_gltf('assets/models/cyber-samurai.glb');
+  let model = await import_obj('assets/models/cornell-box/cornell-box.obj');
   console.log(model);
 
   // tree_scene.add(model);
@@ -65,14 +73,17 @@ async function main() {
     renderer.reset_sampling();
   });
 
-  addEventListener('background-color-input', (event) => {
+  addEventListener('environment-change', (event) => {
     const customEvent = event as CustomEvent;
-    const color = parseInt(customEvent.detail.color.substring(1), 16);
-    renderer.background_color = new Vector3(
-      ((color >> 16) & 0xff) / 255,
-      ((color >> 8) & 0xff) / 255,
-      (color & 0xff) / 255
-    );
+    load_hdr(customEvent.detail.path).then(env => {
+      renderer.set_environment(env);
+    });
+  });
+
+  addEventListener('environment-intensity-input', (event) => {
+    const customEvent = event as CustomEvent;
+    console.log(customEvent.detail.intensity);
+    renderer.environment_intensity = customEvent.detail.intensity;
     renderer.reset_sampling();
   });
 

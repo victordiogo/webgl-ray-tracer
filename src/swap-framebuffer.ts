@@ -4,8 +4,8 @@ export class SwapFramebuffer {
   textures: WebGLTexture[];
   gl: WebGL2RenderingContext;
 
-  constructor(gl: WebGL2RenderingContext, width: number, height: number, texture_32f: boolean) {
-    this.textures = [this.create_texture(gl, width, height, texture_32f), this.create_texture(gl, width, height, texture_32f)];
+  constructor(gl: WebGL2RenderingContext, width: number, height: number) {
+    this.textures = [this.create_texture(gl, width, height), this.create_texture(gl, width, height)];
     this.framebuffers = [this.create_framebuffer(gl, this.textures[0]), this.create_framebuffer(gl, this.textures[1])];
     this.gl = gl;
   }
@@ -38,13 +38,12 @@ export class SwapFramebuffer {
     this.gl.deleteTexture(this.textures[1]);
   }  
 
-  create_texture(gl: WebGL2RenderingContext, width: number, height: number, texture_32f: boolean): WebGLTexture {
+  create_texture(gl: WebGL2RenderingContext, width: number, height: number): WebGLTexture {
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    const format = texture_32f ? gl.RGBA32F : gl.RGBA16F;
-    gl.texImage2D(gl.TEXTURE_2D, 0, format, width, height, 0, gl.RGBA, gl.FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.bindTexture(gl.TEXTURE_2D, null);
     return texture;
   }
