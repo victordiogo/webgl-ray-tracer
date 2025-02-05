@@ -1,5 +1,5 @@
 # To Do
-- Load GLB
-- Normal map
+- see erichlof example ray tracing
+
 - Importance Sampling
-- Physically based materials
+- Improve BVH creation time

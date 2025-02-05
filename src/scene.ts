@@ -1,238 +1,335 @@
 import { Bvh } from "./bvh";
 
-import { Mesh, Vector2, Vector3, Vector4, MeshStandardMaterial, MeshPhongMaterial, MeshPhysicalMaterial, BufferAttribute, Material, Texture } from "three";
+import { Mesh } from "three";
+import * as Three from "three";
+
+import { Vector2, Vector3, Vector4, BufferAttribute, Material, Texture } from "three";
+
+const g_canvas = document.createElement('canvas');
+const g_context = g_canvas.getContext('2d', { willReadFrequently: true });
 
 function get_texture_data(texture: Texture, width: number, height: number) {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  if (!context) {
+  g_canvas.width = width;
+  g_canvas.height = height;
+  if (!g_context) {
     throw new Error('Failed to get 2d context');
   }
   if (texture.flipY) {
-    // flip image vertically
-    context.translate(0, height);
-    context.scale(1, -1);
+    g_context.translate(0, height);
+    g_context.scale(1, -1);
   }
-  context.drawImage(texture.image, 0, 0, width, height);
-  return context.getImageData(0, 0, width, height).data;
+  g_context.drawImage(texture.image, 0, 0, width, height);
+  return g_context.getImageData(0, 0, width, height).data;
 }
+export class Scene extends Three.Scene {
+  num_triangles: number = 0;
+  environment: Texture;
+  meshes_needs_update: boolean = false;
+  environment_needs_update: boolean = false;
+  environment_intensity_needs_update: boolean = false;
 
-class SceneData {
-  positions: Vector3[] = [];
-  normals: Vector3[] = [];
-  uvs: Vector2[] = [];
-  materials: Material[] = [];
-  indices: Vector4[] = []; // x: position, y: uv, z: normal, w: material
-  textures: Texture[] = [];
-};
+  environment_texture: WebGLTexture | null = null;
+  positions_texture: WebGLTexture | null = null;
+  normals_texture: WebGLTexture | null = null;
+  uvs_texture: WebGLTexture | null = null;
+  tangents_texture: WebGLTexture | null = null;
+  indices_texture: WebGLTexture | null = null;
+  materials_texture: WebGLTexture | null = null;
+  bvh_texture: WebGLTexture | null = null;
+  textures_texture: WebGLTexture | null = null;
 
-export class Scene {
-  meshes: Mesh[] = [];
-  gl: WebGL2RenderingContext;
-  positions: WebGLTexture; 
-  normals: WebGLTexture;
-  uvs: WebGLTexture;
-  indices: WebGLTexture;
-  materials: WebGLTexture;
-  bvh: WebGLTexture;
-  textures: WebGLTexture | null = null;
-  bvh_length: number;
-
-  constructor(gl: WebGL2RenderingContext) {
-    this.gl = gl
-  }
-
-  add(...meshes: Mesh[]) : void {
-    this.meshes.push(...meshes);
+  constructor(environment: Texture) {
+    super();
+    this.environment = environment;
+    this.environment_needs_update = true;
+    this.environment_intensity_needs_update = true;
   }
 
   merge_meshes() {
-    const merged = new SceneData();
+    const positions: Vector3[] = [];
+    const normals: Vector3[] = [];
+    const uvs: Vector2[] = [];
+    const tangents: Vector3[] = [];
+    const indices: Vector4[] = [];
+    const materials: Material[] = [];
+    const groups: { start: number, count: number, material_index: number }[] = [];
+    const textures: Texture[] = [];
+    const textures_indices = new Map<string, number>();
 
-    for (const mesh of this.meshes) {
-      const position = mesh.geometry.getAttribute('position');
-      const normal = mesh.geometry.getAttribute('normal');
-      const uv = mesh.geometry.getAttribute('uv');
-      const index = mesh.geometry.getIndex();
-
-      const materials: Material[] = [];
-      if (mesh.material instanceof Material) {
-        materials.push(mesh.material);
+    const meshes: Mesh[] = [];
+    this.traverse(obj => {
+      obj.updateMatrixWorld();
+      if (obj instanceof Mesh) {
+        meshes.push(obj);
       }
-      else if (mesh.material instanceof Array) {
-        materials.push(...mesh.material);
+    });
+
+    for (const mesh of meshes) {
+      if (!mesh.geometry.getAttribute('normal')) {
+        mesh.geometry.computeVertexNormals();
       }
 
-      materials.forEach(m => {
+      if (!mesh.geometry.getIndex()) {
+        const position = mesh.geometry.getAttribute('position');
+        mesh.geometry.setIndex(new BufferAttribute(new Uint16Array(position.count), 1));
+        for (let i = 0; i < position.count; ++i) {
+          mesh.geometry.getIndex()!.array[i] = i;
+        }
+      }
+
+      if (!mesh.geometry.getAttribute('tangent') && mesh.geometry.getAttribute('uv')) {
+        mesh.geometry.computeTangents();
+      }
+
+      const mesh_materials: Material[] = mesh.material instanceof Array ? mesh.material : [mesh.material];
+
+      if (mesh_materials.length === 0) {
+        mesh_materials.push(new Material());
+      }
+
+      mesh_materials.forEach(m => {
         if (m["map"]) {
-          merged.textures.push(m["map"]);
-          m.userData.albedo_index = merged.textures.length - 1;
+          if (!textures_indices.has(m["map"].uuid)) {
+            textures_indices.set(m["map"].uuid, textures.length);
+            textures.push(m["map"]);
+          }
+          m.userData.albedo_index = textures_indices.get(m["map"].uuid)!;
         }
         else {
           m.userData.albedo_index = -1;
         }
 
         if (m["normalMap"]) {
-          merged.textures.push(m["normalMap"]);
-          m.userData.normal_index = merged.textures.length - 1;
+          if (!textures_indices.has(m["normalMap"].uuid)) {
+            textures_indices.set(m["normalMap"].uuid, textures.length);
+            textures.push(m["normalMap"]);
+          }
+          m.userData.normal_index = textures_indices.get(m["normalMap"].uuid)!;
         }
         else {
           m.userData.normal_index = -1;
         }
 
         if (m["roughnessMap"]) {
-          merged.textures.push(m["roughnessMap"]);
-          m.userData.roughness_index = merged.textures.length - 1;
+          if (!textures_indices.has(m["roughnessMap"].uuid)) {
+            textures_indices.set(m["roughnessMap"].uuid, textures.length);
+            textures.push(m["roughnessMap"]);
+          }
+          m.userData.roughness_index = textures_indices.get(m["roughnessMap"].uuid)!;
         }
         else {
           m.userData.roughness_index = -1;
         }
 
         if (m["metalnessMap"]) {
-          merged.textures.push(m["metalnessMap"]);
-          m.userData.metalness_index = merged.textures.length - 1;
+          if (!textures_indices.has(m["metalnessMap"].uuid)) {
+            textures_indices.set(m["metalnessMap"].uuid, textures.length);
+            textures.push(m["metalnessMap"]);
+          }
+          m.userData.metalness_index = textures_indices.get(m["metalnessMap"].uuid)!;
         }
         else {
           m.userData.metalness_index = -1;
         }
 
         if (m["emissiveMap"]) {
-          merged.textures.push(m["emissiveMap"]);
-          m.userData.emission_index = merged.textures.length - 1;
+          if (!textures_indices.has(m["emissiveMap"].uuid)) {
+            textures_indices.set(m["emissiveMap"].uuid, textures.length);
+            textures.push(m["emissiveMap"]);
+          }
+          m.userData.emission_index = textures_indices.get(m["emissiveMap"].uuid)!;
         }
         else {
           m.userData.emission_index = -1;
         }
 
-        merged.materials.push(m);
+        materials.push(m);
       });
 
-      if (merged.materials.length === 0) {
-        merged.materials.push(new MeshStandardMaterial());
+      const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+      const index = geometry.getIndex()!;
+      const position = geometry.getAttribute('position');
+
+      if (geometry.groups.length === 0) {
+        geometry.addGroup(0, index.count, 0);
       }
 
-      if (mesh.geometry.groups.length === 0) {
-        if (index) {
-          mesh.geometry.addGroup(0, index.count, 0);
-        }
-        else {
-          mesh.geometry.addGroup(0, position.count, 0);
-        }
-      }
+      const group_offset = indices.length;
 
-      if (index) {
-        for (let group = 0; group < mesh.geometry.groups.length; ++group) {
-          const start = mesh.geometry.groups[group].start;
-          const count = mesh.geometry.groups[group].count;
-          for (let i = start; i < start + count; ++i) {
-            const idx = index.getX(i);
-            const material_index = merged.materials.length - mesh.geometry.groups.length + (mesh.geometry.groups[group].materialIndex || group);
-            merged.indices.push(new Vector4(
-              idx + merged.positions.length, 
-              idx + merged.uvs.length, 
-              idx + merged.normals.length, 
-              material_index)
-            );
-          }
-        }
-      }
-      else {
-        for (let group = 0; group < mesh.geometry.groups.length; ++group) {
-          const start = mesh.geometry.groups[group].start;
-          const count = mesh.geometry.groups[group].count;
-          for (let i = start; i < start + count; ++i) {
-            const material_index = merged.materials.length - mesh.geometry.groups.length + (mesh.geometry.groups[group].materialIndex || group);
-            merged.indices.push(new Vector4(
-              i + merged.positions.length, 
-              i + merged.uvs.length, 
-              i + merged.normals.length, 
-              material_index)
-            );
-          }
+      for (let group = 0; group < geometry.groups.length; ++group) {
+        const start = geometry.groups[group].start;
+        const count = geometry.groups[group].count;
+        
+        const material_index = materials.length - geometry.groups.length + (geometry.groups[group].materialIndex || group);
+
+        groups.push({ start: group_offset + start, count, material_index });
+
+        for (let i = start; i < start + count; ++i) {
+          const idx = index.getX(i);
+          indices.push(new Vector4(
+            idx + positions.length, 
+            idx + uvs.length, 
+            idx + normals.length, 
+            idx + tangents.length)
+          );
         }
       }
 
       for (let i = 0; i < position.count; ++i) {
-        merged.positions.push(new Vector3().fromBufferAttribute(position, i));
+        positions.push(new Vector3().fromBufferAttribute(position, i));
       }
 
+      const normal = geometry.getAttribute('normal');
+
       for (let i = 0; i < normal.count; ++i) {
-        merged.normals.push(new Vector3().fromBufferAttribute(normal, i));
+        normals.push(new Vector3().fromBufferAttribute(normal, i));
       }
+
+      const uv = geometry.getAttribute('uv');
 
       if (uv) {
         for (let i = 0; i < uv.count; ++i) {
-          merged.uvs.push(new Vector2().fromBufferAttribute(uv as BufferAttribute, i));
+          uvs.push(new Vector2().fromBufferAttribute(uv as BufferAttribute, i));
+        }
+      }
+
+      const tangent = geometry.getAttribute('tangent');
+
+      if (tangent) {
+        for (let i = 0; i < tangent.count; ++i) {
+          tangents.push(new Vector3().fromBufferAttribute(tangent, i));  
         }
       }
     }
-    
-    return merged;
+
+    this.num_triangles = indices.length / 3;
+
+    return { positions, normals, uvs, tangents, indices, materials, groups, textures };
+  }
+
+  update_environment(gl: WebGL2RenderingContext, program: WebGLProgram) {
+    if (!this.environment_needs_update) {
+      return false;
+    }
+
+    gl.deleteTexture(this.environment_texture);
+
+    this.environment_texture = gl.createTexture();
+    gl.useProgram(program);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_environment'), 1);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.environment_texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, this.environment.image.width, this.environment.image.height, 0, gl.RGBA, gl.FLOAT, this.environment.image.data);
+    const param = gl.getExtension('OES_texture_float_linear') ? gl.LINEAR : gl.NEAREST;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param);
+    this.environment_needs_update = false;
+
+    return true;
+  }
+
+  update_environment_intensity(gl: WebGL2RenderingContext, program: WebGLProgram) {
+    if (!this.environment_intensity_needs_update) {
+      return false;
+    }
+
+    gl.useProgram(program);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_environment_intensity'), this.environmentIntensity);
+    this.environment_intensity_needs_update = false;
+    return true;
   }
   
-  update() {
-    // cleanup last scene
-    
-    const merged = this.merge_meshes();
-    const bvh = new Bvh(merged);
+  update_meshes(gl: WebGL2RenderingContext, program: WebGLProgram) {
+    if (!this.meshes_needs_update) {
+      return false;
+    }
 
-    this.bvh_length = bvh.list.length;
-    
-    this.positions = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.positions);
-    const positions_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.positions.length);
-    const positions_height = Math.ceil(merged.positions.length / positions_width);
-    let data = new Float32Array(positions_width * positions_height * 3);
-    merged.positions.forEach((p, i) => data.set(p.toArray(), i * 3));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, positions_width, positions_height, 0, this.gl.RGB, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
-    
-    this.normals = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.normals);
-    const normals_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.normals.length);
-    const normals_height = Math.ceil(merged.normals.length / normals_width);
-    data = new Float32Array(normals_width * normals_height * 3);
-    merged.normals.forEach((n, i) => data.set(n.toArray(), i * 3));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGB32F, normals_width, normals_height, 0, this.gl.RGB, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+    gl.deleteTexture(this.positions_texture);
+    gl.deleteTexture(this.normals_texture);
+    gl.deleteTexture(this.uvs_texture);
+    gl.deleteTexture(this.tangents_texture);
+    gl.deleteTexture(this.indices_texture);
+    gl.deleteTexture(this.materials_texture);
+    gl.deleteTexture(this.bvh_texture);
+    gl.deleteTexture(this.textures_texture);
 
-    this.uvs = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.uvs);
-    const uvs_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.uvs.length);
-    const uvs_height = Math.ceil(merged.uvs.length / uvs_width);
-    data = new Float32Array(uvs_width * uvs_height * 2);
-    merged.uvs.forEach((uv, i) => data.set(uv.toArray(), i * 2));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RG32F, uvs_width, uvs_height, 0, this.gl.RG, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
-
-    this.indices = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
-    const indices_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.indices.length);
-    const indices_height = Math.ceil(merged.indices.length / indices_width);
-    data = new Float32Array(indices_width * indices_height * 4);
-    merged.indices.forEach((i, j) => data.set(i.toArray(), j * 4));
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, indices_width, indices_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+    const merged_meshes = this.merge_meshes();
+    const bvh = new Bvh(merged_meshes.positions, merged_meshes.indices, merged_meshes.groups);
     
-    this.materials = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
-    const materials_width = Math.min(this.gl.MAX_TEXTURE_SIZE, merged.materials.length * 4);
-    const materials_height = Math.ceil(merged.materials.length * 4 / materials_width);
-    data = new Float32Array(materials_width * materials_height * 4);
-    merged.materials.forEach((m, i) => {
+    gl.useProgram(program);
+    gl.uniform1i(gl.getUniformLocation(program, "u_max_texture_size"), gl.MAX_TEXTURE_SIZE);
+    gl.uniform1i(gl.getUniformLocation(program, "u_bvh_length"), bvh.list.length);
+
+    function set_texture_data(texture: WebGLTexture, data: Float32Array, width: number, height: number, internal_format: number, format: number) {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal_format, width, height, 0, format, gl.FLOAT, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    }
+
+    // positions
+    let width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.positions.length);
+    let height = Math.ceil(merged_meshes.positions.length / width);
+    let data = new Float32Array(width * height * 3);
+    merged_meshes.positions.forEach((p, i) => data.set(p.toArray(), i * 3));
+    this.positions_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_positions"), 2);
+    gl.activeTexture(gl.TEXTURE2);
+    set_texture_data(this.positions_texture, data, width, height, gl.RGB32F, gl.RGB);
+    
+    // normals
+    width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.normals.length);
+    height = Math.ceil(merged_meshes.normals.length / width);
+    data = new Float32Array(width * height * 3);
+    merged_meshes.normals.forEach((n, i) => data.set(n.toArray(), i * 3));
+    this.normals_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_normals"), 3);
+    gl.activeTexture(gl.TEXTURE3);
+    set_texture_data(this.normals_texture, data, width, height, gl.RGB32F, gl.RGB);
+
+    // uvs
+    width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.uvs.length);
+    height = Math.ceil(merged_meshes.uvs.length / width);
+    data = new Float32Array(width * height * 2);
+    merged_meshes.uvs.forEach((uv, i) => data.set(uv.toArray(), i * 2));
+    this.uvs_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_uvs"), 4);
+    gl.activeTexture(gl.TEXTURE4);
+    set_texture_data(this.uvs_texture, data, width, height, gl.RG32F, gl.RG);
+
+    // tangents
+    width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.tangents.length);
+    height = Math.ceil(merged_meshes.tangents.length / width);
+    data = new Float32Array(width * height * 3);
+    merged_meshes.tangents.forEach((t, i) => data.set(t.toArray(), i * 3));
+    this.tangents_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_tangents"), 5);
+    gl.activeTexture(gl.TEXTURE5);
+    set_texture_data(this.tangents_texture, data, width, height, gl.RGB32F, gl.RGB);
+
+    // indices
+    width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.indices.length);
+    height = Math.ceil(merged_meshes.indices.length / width);
+    data = new Float32Array(width * height * 4);
+    merged_meshes.indices.forEach((i, j) => data.set(i.toArray(), j * 4));
+    this.indices_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_indices"), 6);
+    gl.activeTexture(gl.TEXTURE6);
+    set_texture_data(this.indices_texture, data, width, height, gl.RGBA32F, gl.RGBA);
+    
+    // materials
+    width = Math.min(gl.MAX_TEXTURE_SIZE, merged_meshes.materials.length * 4);
+    height = Math.ceil(merged_meshes.materials.length * 4 / width);
+    data = new Float32Array(width * height * 4);
+    merged_meshes.materials.forEach((m, i) => {
       const albedo = m["color"] || new Vector3(1, 1, 1);
       const ei = m["emissiveIntensity"] !== undefined ? m["emissiveIntensity"] : 1;
       const emissive = m["emissive"] || new Vector3(0, 0, 0);
       emissive.multiplyScalar(ei);
       const metalness = m["metalness"] !== undefined ? m["metalness"] : 0;
       const roughness = m["roughness"] !== undefined ? m["roughness"] : 1;
-
+      const opacity = m.opacity >= 0.99 ? m["transmission"] !== undefined ? 1 - m["transmission"] : 1 : m.opacity;
+      
       data.set([
         m.userData.albedo_index, 
         m.userData.roughness_index,
@@ -243,78 +340,50 @@ export class Scene {
         ...emissive.toArray(), 
         metalness, 
         roughness, 
-        m.transparent ? 1 : 1 - m.opacity,
-        m['ior'] || 1.5,
+        opacity,
+        m['ior'] || 1,
         0
       ], i * 4 * 4)
     });
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, materials_width, materials_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
-
-    this.bvh = this.gl.createTexture();
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
-    const bvh_width = Math.min(this.gl.MAX_TEXTURE_SIZE, bvh.list.length * 2);
-    const bvh_height = Math.ceil(bvh.list.length * 2 / bvh_width);
-    data = new Float32Array(bvh_width * bvh_height * 4);
+    this.materials_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_materials"), 7);
+    gl.activeTexture(gl.TEXTURE7);
+    set_texture_data(this.materials_texture, data, width, height, gl.RGBA32F, gl.RGBA);
+    
+    // bvh
+    width = Math.min(gl.MAX_TEXTURE_SIZE, bvh.list.length * 2);
+    height = Math.ceil(bvh.list.length * 2 / width);
+    data = new Float32Array(width * height * 4);
     bvh.list.forEach((node, i) => {
-      data.set([node.left_index, node.right_index, ...node.aabb.to_array()], i * 8);
+      data.set([node.left_index, node.material_index, ...node.aabb.to_array()], i * 8);
     });
-    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA32F, bvh_width, bvh_height, 0, this.gl.RGBA, this.gl.FLOAT, data);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
-    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
-
-    if (merged.textures.length > 0) {
+    this.bvh_texture = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(program, "u_bvh"), 8);
+    gl.activeTexture(gl.TEXTURE8);
+    set_texture_data(this.bvh_texture, data, width, height, gl.RGBA32F, gl.RGBA);
+    
+    gl.uniform1i(gl.getUniformLocation(program, "u_textures"), 9);
+    gl.activeTexture(gl.TEXTURE9);
+    if (merged_meshes.textures.length > 0) {
       let max_width = 0;
       let max_height = 0;
-      merged.textures.forEach(t => {
+      merged_meshes.textures.forEach(t => {
         max_width = Math.max(max_width, t.image.width);
         max_height = Math.max(max_height, t.image.height);
       });
-
-      this.textures = this.gl.createTexture();
-      this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
-      this.gl.texStorage3D(this.gl.TEXTURE_2D_ARRAY, 1, this.gl.RGBA8, max_width, max_height, merged.textures.length);
-      merged.textures.forEach((t, i) => {
-        this.gl.texSubImage3D(this.gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, this.gl.RGBA, this.gl.UNSIGNED_BYTE, get_texture_data(t, max_width, max_height));
+      
+      this.textures_texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures_texture);
+      gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, max_width, max_height, merged_meshes.textures.length);
+      merged_meshes.textures.forEach((t, i) => {
+        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, gl.RGBA, gl.UNSIGNED_BYTE, get_texture_data(t, max_width, max_height));
       });
-      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
-      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
-      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT);
-      this.gl.texParameteri(this.gl.TEXTURE_2D_ARRAY, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT);
     }
-  }
+    else {
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    }
 
-  use(program: WebGLProgram) {
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_positions"), 2);
-    this.gl.activeTexture(this.gl.TEXTURE2);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.positions);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_normals"), 3);
-    this.gl.activeTexture(this.gl.TEXTURE3);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.normals);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_uvs"), 4);
-    this.gl.activeTexture(this.gl.TEXTURE4);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.uvs);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_materials"), 5);
-    this.gl.activeTexture(this.gl.TEXTURE5);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.materials);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_indices"), 6);
-    this.gl.activeTexture(this.gl.TEXTURE6);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.indices);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh"), 7);
-    this.gl.activeTexture(this.gl.TEXTURE7);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.bvh);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_textures"), 8);
-    this.gl.activeTexture(this.gl.TEXTURE8);
-    this.gl.bindTexture(this.gl.TEXTURE_2D_ARRAY, this.textures);
-
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_max_texture_size"), this.gl.MAX_TEXTURE_SIZE);
-    this.gl.uniform1i(this.gl.getUniformLocation(program, "u_bvh_length"), this.bvh_length);
+    this.meshes_needs_update = false;
+    return true;
   }
 };

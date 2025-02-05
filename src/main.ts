@@ -1,10 +1,11 @@
-import { Camera } from './camera.js';
+import { OrbitalCamera } from './orbital-camera';
+import { Scene } from './scene';
+
 import KeyboardState from '../lib/keyboard-state.js';
 
-import { Vector3, Scene as TreeScene, WebGLRenderer, PerspectiveCamera, DirectionalLight, AmbientLight, FloatType } from 'three';
-import { RayTracingRenderer } from './ray-tracing-renderer.js';
-import { import_gltf, import_obj } from './model.js';
-import { Scene } from './scene.js';
+import { Vector3, FloatType, PlaneGeometry, MeshPhysicalMaterial, TextureLoader, Mesh } from 'three';
+import { RayTracingRenderer } from './ray-tracing-renderer';
+import { import_gltf, import_obj } from './model';
 import { RGBELoader } from 'three/examples/jsm/Addons.js';
 
 main().catch(e => {
@@ -17,98 +18,94 @@ async function load_hdr(path: string) {
   return await loader.loadAsync(path);
 }
 
+async function create_ground() {
+  const geometry = new PlaneGeometry(3, 3);
+  geometry.rotateX(-Math.PI / 2);
+  const loader = new TextureLoader();
+  const albedo = await loader.loadAsync('assets/textures/ground/ground-alb.jpg');
+  const normal = await loader.loadAsync('assets/textures/ground/ground-nor.jpg');
+  const arm = await loader.loadAsync('assets/textures/ground/ground-arm.jpg');
+
+  const material = new MeshPhysicalMaterial({
+    map: albedo,
+    normalMap: normal,
+    roughnessMap: arm,
+    metalnessMap: arm
+  });
+
+  return new Mesh(geometry, material);
+}
+
 async function main() {
-  const environment = await load_hdr('assets/environments/lost-city.hdr');
+  let resolution = 0.6;
 
-  const renderer = new RayTracingRenderer(innerWidth, innerHeight, 4, environment);
-  await renderer.compile_shaders();
+  const renderer = new RayTracingRenderer(innerWidth * resolution, innerHeight * resolution, 3);
   document.body.appendChild(renderer.canvas);
-  const camera = new Camera(renderer.gl, 90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0, 0), 50, 1.5, 0);
-
-  const tree_renderer = new WebGLRenderer({ antialias: true });
-  tree_renderer.setSize(innerWidth, innerHeight);
-  // document.body.appendChild(tree_renderer.domElement);
-
-  const tree_scene = new TreeScene();
-  const dir_light = new DirectionalLight(0xffffff, 1);
-  dir_light.position.set(1, 1, 1);
-  tree_scene.add(dir_light);
-  tree_scene.add(new AmbientLight(0xffffff, 0.5));
+  
+  const camera = new OrbitalCamera(90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0.5, 0), 50, 1.5, 0);
+  
+  const environment = await load_hdr('assets/environments/lost-city.hdr');
+  let scene = new Scene(environment);
   
   let model = await import_obj('assets/models/cornell-box/cornell-box.obj');
-  console.log(model);
-
-  // tree_scene.add(model);
-  model.forEach(mesh => {
-    tree_scene.add(mesh);
-  });
-
-  const tree_camera = new PerspectiveCamera(90, innerWidth / innerHeight, 0.1, 1000);
-  tree_camera.position.set(0, 0, 4);
-
-  tree_renderer.domElement.addEventListener('mousemove', e => {
-    if (e.buttons !== 1) {
-      tree_renderer.domElement.style.cursor = 'grab';
-      return;
-    }
-    tree_renderer.domElement.style.cursor = 'grabbing';
-    tree_camera.rotation.y += 0.01 * e.movementX;
-    tree_camera.rotation.x += 0.01 * e.movementY;
-  });
+  scene.add(model);
   
-  let scene = new Scene(renderer.gl);
-  scene.add(...model);
-  scene.update();
+  const plane = await create_ground();
+  scene.add(plane);
+  scene.meshes_needs_update = true;
+
+  const geometry = new PlaneGeometry(2, 2);
+  const material = new MeshPhysicalMaterial({ emissive: 0xffffff });
+  const light = new Mesh(geometry, material);
+  light.position.set(1, 3, 1);
+  light.rotateX(-Math.PI / 2);
+  scene.add(light);
   
   const keyboard = new KeyboardState();
   
   renderer.canvas.addEventListener('mousemove', e => process_mouse_move(e, renderer, camera));
-  renderer.canvas.addEventListener('mousewheel', e => process_mouse_wheel(e as WheelEvent, renderer, camera));
+  renderer.canvas.addEventListener('mousewheel', e => process_mouse_wheel(e as WheelEvent, camera));
   
-  addEventListener('resize', () => resize(renderer, camera));
+  addEventListener('resize', () => resize(renderer, camera, resolution));
 
-  addEventListener('depth-input', (event) => {
+  addEventListener('max-depth-input', (event) => {
     const customEvent = event as CustomEvent;
-    renderer.max_depth = customEvent.detail.depth;
-    renderer.reset_sampling();
+    renderer.max_depth = customEvent.detail.max_depth;
+    renderer.sample_count = 0;
   });
 
   addEventListener('environment-change', (event) => {
     const customEvent = event as CustomEvent;
     load_hdr(customEvent.detail.path).then(env => {
-      renderer.set_environment(env);
+      scene.environment = env;
+      scene.environment_needs_update = true;
     });
   });
 
   addEventListener('environment-intensity-input', (event) => {
     const customEvent = event as CustomEvent;
-    console.log(customEvent.detail.intensity);
-    renderer.environment_intensity = customEvent.detail.intensity;
-    renderer.reset_sampling();
+    scene.environmentIntensity = customEvent.detail.intensity;
+    scene.environment_intensity_needs_update = true;
   });
 
-  const scene_cache: Map<string, Scene> = new Map();
-  scene_cache.set('cornell-box.obj', scene);
+  addEventListener('resolution-input', (event) => {
+    const customEvent = event as CustomEvent;
+    resolution = customEvent.detail.resolution;
+    resize(renderer, camera, resolution);
+  });
+
   addEventListener('model-change', async (event) => {
     const customEvent = event as CustomEvent;
     const path = customEvent.detail.path;
-    if (scene_cache.has(path)) {
-      scene = scene_cache.get(path)!;
+    scene.remove(model);
+    if (path.endsWith('.gltf') || path.endsWith('.glb')) {
+      model = await import_gltf(path);
     }
-    else {
-      if (path.endsWith('.gltf') || path.endsWith('.glb')) {
-        model = await import_gltf(path);
-      }
-      else if (path.endsWith('.obj')) {
-        model = await import_obj(path);
-      }
-      console.log(model)
-      scene = new Scene(renderer.gl);
-      scene.add(...model);
-      scene.update();
-      scene_cache.set(path, scene);
+    else if (path.endsWith('.obj')) {
+      model = await import_obj(path);
     }
-    renderer.reset_sampling();
+    scene.add(model);
+    scene.meshes_needs_update = true;
   });
   
   let last_time = performance.now();
@@ -123,26 +120,20 @@ async function main() {
     last_time = current_time;
     ++frame_count;
     
-    keyboard.pressed('W') && tree_camera.translateZ(-0.1);
-    process_keyboard_input(keyboard, renderer, camera, frame_time);
+    process_keyboard_input(keyboard, camera, frame_time);
     
-    renderer.render(camera, scene);
-    tree_renderer.render(tree_scene, tree_camera);
+    renderer.render(scene, camera);
     
-    const diff_time = current_time - last_avg_time;
-    if (diff_time > 1000) {
-      const avg_fps = frame_count / (diff_time / 1000);
+    const elapsed = current_time - last_avg_time;
+    if (elapsed > 1000) {
+      const avg_fps = frame_count / (elapsed / 1000);
       document.getElementById('fps')!.innerText = "FPS: " + avg_fps.toFixed(0);
       last_avg_time = current_time;
       frame_count = 0;  
     }
     document.getElementById('samples')!.innerText = "Samples: " + renderer.sample_count;
-    document.getElementById('triangles')!.innerText = "Triangles: " + scene.meshes.reduce((acc, model) => {
-      const index = model.geometry.getIndex();
-      const position = model.geometry.getAttribute('position');
-      return acc + (index ? index.count / 3 : position.count / 3);
-    }, 0);
-    document.getElementById('fov')!.innerText = "FOV: " + camera.vfov.toFixed(2) + "°";
+    document.getElementById('triangles')!.innerText = "Triangles: " + scene.num_triangles;
+    document.getElementById('fov')!.innerText = "FOV: " + camera.fov.toFixed(2) + "°";
     document.getElementById('focus-distance')!.innerText = "Focus Distance: " + camera.focus_distance.toFixed(2);
     document.getElementById('defocus-angle')!.innerText = "Defocus Angle: " + camera.defocus_angle.toFixed(2) + "°";
     
@@ -152,75 +143,57 @@ async function main() {
   render();
 }
 
-function resize(renderer: RayTracingRenderer, camera: Camera) {
-  renderer.resize(innerWidth, innerHeight);
-  camera.width = innerWidth;
-  camera.height = innerHeight;
+function resize(renderer: RayTracingRenderer, camera: OrbitalCamera, resolution: number) {
+  renderer.set_size(innerWidth * resolution, innerHeight * resolution);
+  camera.render_width = innerWidth * resolution;
+  camera.render_height = innerHeight * resolution;
+  camera.needs_update = true;
 }
 
-function process_keyboard_input(keyboard: KeyboardState, renderer: RayTracingRenderer, camera: Camera, frame_time: number) {
+function process_keyboard_input(keyboard: KeyboardState, camera: OrbitalCamera, frame_time: number) {
   if (keyboard.pressed('W')) {
-    camera.vfov -= 0.1 * frame_time;
-    if (camera.vfov < 1) {
-      camera.vfov = 1;
+    camera.fov -= 0.1 * frame_time;
+    if (camera.fov < 1) {
+      camera.fov = 1;
     }
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   if (keyboard.pressed('S')) {
-    camera.vfov += 0.1 * frame_time;
-    if (camera.vfov > 179) {
-      camera.vfov = 179;
+    camera.fov += 0.1 * frame_time;
+    if (camera.fov > 179) {
+      camera.fov = 179;
     }
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   if (keyboard.pressed('D')) {
     camera.focus_distance += 0.002 * frame_time;
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   if (keyboard.pressed('A')) {
     camera.focus_distance -= 0.002 * frame_time;
     if (camera.focus_distance < 0.1) {
       camera.focus_distance = 0.1;
     }
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   if (keyboard.pressed('Q')) {
     camera.defocus_angle -= 0.002 * frame_time;
     if (camera.defocus_angle < 0) {
       camera.defocus_angle = 0;
     }
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   if (keyboard.pressed('E')) {
     camera.defocus_angle += 0.002 * frame_time;
     if (camera.defocus_angle > 45) {
       camera.defocus_angle = 45;
     }
-    renderer.reset_sampling();
-  }
-  if (keyboard.pressed('up')) {
-    let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.005;
-    if (offset > 2) {
-      offset = 2;
-    }
-    camera.radial_distance -= offset * frame_time;
-    if (camera.radial_distance < 0.1) {
-      camera.radial_distance = 0.1;
-    }
-    renderer.reset_sampling();
-  }
-  if (keyboard.pressed('down')) {
-    let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.005;
-    if (offset > 2) {
-      offset = 2;
-    }
-    camera.radial_distance += offset * frame_time;
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   keyboard.update();
 }
 
-function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, camera: Camera) {
+function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, camera: OrbitalCamera) {
   if (event.buttons === 1) {
     renderer.canvas.style.cursor = 'grabbing';
     camera.azimuthal_angle -= 0.3 * event.movementX;
@@ -231,14 +204,14 @@ function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, cam
     if (camera.polar_angle < 0.01) {
       camera.polar_angle = 0.01;
     }
-    renderer.reset_sampling();
+    camera.needs_update = true;
   }
   else {
     renderer.canvas.style.cursor = 'grab';
   }
 }
 
-function process_mouse_wheel(event: WheelEvent, renderer: RayTracingRenderer, camera: Camera) {
+function process_mouse_wheel(event: WheelEvent, camera: OrbitalCamera) {
   let offset = Math.exp(camera.radial_distance * 0.1 - 0.5) * 0.001 * event.deltaY;
   if (Math.abs(offset) > 2) {
     offset = 2 * Math.sign(offset);
@@ -250,5 +223,5 @@ function process_mouse_wheel(event: WheelEvent, renderer: RayTracingRenderer, ca
   if (camera.radial_distance > 100) {
     camera.radial_distance = 100;
   }
-  renderer.reset_sampling();
+  camera.needs_update = true;
 }

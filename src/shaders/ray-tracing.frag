@@ -6,7 +6,7 @@ precision highp sampler2D;
 precision highp sampler2DArray;
 
 // renderer
-uniform sampler2D u_prev_color;
+uniform sampler2D u_prev_render;
 uniform sampler2D u_environment;
 uniform float u_environment_intensity;
 uniform int u_sample_count;
@@ -15,8 +15,9 @@ uniform int u_max_depth;
 uniform sampler2D u_positions;
 uniform sampler2D u_normals;
 uniform sampler2D u_uvs;
-uniform sampler2D u_materials;
+uniform sampler2D u_tangents;
 uniform sampler2D u_indices;
+uniform sampler2D u_materials;
 uniform sampler2D u_bvh;
 uniform sampler2DArray u_textures;
 uniform int u_bvh_length;
@@ -48,7 +49,7 @@ uint jenkins_hash(uint x) {
 }
 
 void init_rng() {
-  uint seed = (uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * uint(textureSize(u_prev_color, 0).x)) ^ jenkins_hash(uint(u_sample_count));
+  uint seed = (uint(gl_FragCoord.x) + uint(gl_FragCoord.y) * uint(textureSize(u_prev_render, 0).x)) ^ jenkins_hash(uint(u_sample_count));
   g_rng_state = jenkins_hash(seed);
 }
 
@@ -94,6 +95,7 @@ struct HitRecord {
   int material_index;
   ivec3 uv_index;
   ivec3 normal_index;
+  ivec3 tangent_index;
 };
 
 ivec2 to_texture_coords(int index) {
@@ -120,6 +122,11 @@ vec2 get_uv(int index) {
 vec3 get_normal(int index) {
   ivec2 coords = to_texture_coords(index);
   return texelFetch(u_normals, coords, 0).xyz;
+}
+
+vec3 get_tangent(int index) {
+  ivec2 coords = to_texture_coords(index);
+  return texelFetch(u_tangents, coords, 0).xyz;
 }
 
 bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_distance, out HitRecord hit_record) {
@@ -165,16 +172,16 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
   hit_record.t = t;
   hit_record.p = p;
   hit_record.q = q;
-  hit_record.material_index = a_indices.w;
   hit_record.uv_index = ivec3(a_indices.y, b_indices.y, c_indices.y);
   hit_record.normal_index = ivec3(a_indices.z, b_indices.z, c_indices.z);
+  hit_record.tangent_index = ivec3(a_indices.w, b_indices.w, c_indices.w);
 
   return true;
 }
 
 struct BvhNode {
   int left_index;
-  int right_index;
+  int material_index;
   vec2 bounding_box_axes[3];
 };
 
@@ -185,7 +192,7 @@ BvhNode get_bvh_node(int index) {
   vec4 data_b = texelFetch(u_bvh, coords, 0).xyzw;
   BvhNode n;
   n.left_index = int(data_a.x);
-  n.right_index = int(data_a.y);
+  n.material_index = int(data_a.y);
   n.bounding_box_axes[0] = data_a.zw;
   n.bounding_box_axes[1] = data_b.xy;
   n.bounding_box_axes[2] = data_b.zw;
@@ -236,11 +243,12 @@ bool trace(Ray ray, out HitRecord hit_record) {
       int triangle_index = -node.left_index - 1;
       if (hit_triangle(triangle_index, ray, 0.0, hit_record.t, temp_record)) {
         hit_record = temp_record;
+        hit_record.material_index = node.material_index;
       }
     }
     else {
-      stack[stack_size++] = node.right_index;
       stack[stack_size++] = node.left_index;
+      stack[stack_size++] = node_index - 1;
     }
   }
 
@@ -262,7 +270,7 @@ struct Material {
   vec3 emission;
   float metalness;
   float roughness;
-  float transparency;
+  float opacity;
   float refraction_index;
 };
 
@@ -349,7 +357,10 @@ ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
     point = surface_data.point - surface_data.normal * g_scatter_bias;
   }
 
-  return ScatterData(vec3(1.0), Ray(point, direction));
+  float a = surface_data.material.opacity;
+  vec3 attenuation = a * surface_data.material.albedo + (1.0 - a) * vec3(1.0);
+
+  return ScatterData(attenuation, Ray(point, direction));
 }
 
 SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
@@ -375,7 +386,9 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   data.material = get_material(hit_record.material_index);
 
   if (data.material.albedo_index != -1) {
-    data.material.albedo = texture(u_textures, vec3(data.uv, data.material.albedo_index)).xyz;
+    vec4 tex = texture(u_textures, vec3(data.uv, data.material.albedo_index));
+    data.material.albedo = tex.rgb;
+    data.material.opacity = tex.a;
   }
 
   if (data.material.roughness_index != -1) {
@@ -386,11 +399,19 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
     data.material.metalness = texture(u_textures, vec3(data.uv, data.material.metalness_index)).b;
   }
 
-  // if (data.material.normal_index != -1) {
-  //   vec3 normal = texture(u_textures, vec3(data.uv, data.material.normal_index)).xyz;
-  //   normal = 2.0 * normal - 1.0;
-  //   data.normal = normalize(normal);
-  // }
+  if (data.material.normal_index != -1) {
+    vec3 a_tangent = get_tangent(hit_record.tangent_index.x);
+    vec3 b_tangent = get_tangent(hit_record.tangent_index.y);
+    vec3 c_tangent = get_tangent(hit_record.tangent_index.z);
+    vec3 tangent = r * a_tangent + hit_record.p * b_tangent + hit_record.q * c_tangent;
+    if (!near_zero(tangent, 1e-4)) {
+      tangent = normalize(tangent);
+      vec3 bitangent = cross(data.normal, tangent);
+      mat3 tbn = mat3(tangent, bitangent, data.normal);
+      vec3 tex = texture(u_textures, vec3(data.uv, data.material.normal_index)).rgb;
+      data.normal = tbn * (2.0 * tex - 1.0);
+    }
+  }
 
   if (data.material.emission_index != -1) {
     data.material.emission = texture(u_textures, vec3(data.uv, data.material.emission_index)).xyz;
@@ -494,6 +515,7 @@ vec3 cast_ray(Ray ray) {
     }
 
     SurfaceData surface_data = get_surface_data(ray, hit_record);
+    // color = surface_data.material.opacity * vec3(1.0);
     // color = surface_data.normal * 0.5 + 0.5;
     // color = surface_data.material.albedo;
     // color = surface_data.material.emission;
@@ -508,10 +530,10 @@ vec3 cast_ray(Ray ray) {
 
     // ScatterData scatter_data = scatter_pbr(ray, surface_data);
     ScatterData scatter_data;
-    if (surface_data.material.transparency > 0.1) {
+    if (surface_data.material.opacity < 0.8) {
       scatter_data = scatter_dielectric(ray, surface_data);
     }
-    else if (surface_data.material.metalness > 0.1) {
+    else if (surface_data.material.metalness > 0.8) {
       scatter_data = scatter_metal(ray, surface_data);
     }
     else {
@@ -546,7 +568,7 @@ void main() {
     o_color = vec4(0.0, 0.0, 0.0, 0.0);
   }
   else {
-    o_color = texelFetch(u_prev_color, ivec2(gl_FragCoord.xy), 0);
+    o_color = texelFetch(u_prev_render, ivec2(gl_FragCoord.xy), 0);
   }
 
   o_color += vec4(color, 1.0);
