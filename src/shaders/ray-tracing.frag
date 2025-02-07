@@ -182,7 +182,8 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 struct BvhNode {
   int left_index;
   int material_index;
-  vec2 bounding_box_axes[3];
+  vec3 bbox_min;
+  vec3 bbox_max;
 };
 
 BvhNode get_bvh_node(int index) {
@@ -190,36 +191,63 @@ BvhNode get_bvh_node(int index) {
   vec4 data_a = texelFetch(u_bvh, coords, 0).xyzw;
   coords = to_texture_coords(index * 2 + 1);
   vec4 data_b = texelFetch(u_bvh, coords, 0).xyzw;
-  BvhNode n;
-  n.left_index = int(data_a.x);
-  n.material_index = int(data_a.y);
-  n.bounding_box_axes[0] = data_a.zw;
-  n.bounding_box_axes[1] = data_b.xy;
-  n.bounding_box_axes[2] = data_b.zw;
-  return n;
+  return BvhNode(int(data_a.x), int(data_a.y), vec3(data_a.zw, data_b.x), vec3(data_b.yzw));
 }
 
 bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_distance) {
-  for (int i = 0; i < 3; ++i) {
-    vec2 axis = node.bounding_box_axes[i];
-    float inv_d = 1.0 / ray.direction[i];
-    float t0 = (axis.x - ray.origin[i]) * inv_d;
-    float t1 = (axis.y - ray.origin[i]) * inv_d;
-    if (inv_d < 0.0) {
-      float temp = t0;
-      t0 = t1;
-      t1 = temp;
-    }
-    if (t0 > min_distance) {
-      min_distance = t0;
-    }
-    if (t1 < max_distance) {
-      max_distance = t1;
-    }
-    if (max_distance <= min_distance) {
-      return false;
-    }
+  vec3 inv_d = 1.0 / ray.direction;
+
+  float t0 = (node.bbox_min.x - ray.origin.x) * inv_d.x;
+  float t1 = (node.bbox_max.x - ray.origin.x) * inv_d.x;
+  if (inv_d.x < 0.0) {
+    float temp = t0;
+    t0 = t1;
+    t1 = temp;
   }
+  if (t0 > min_distance) {
+    min_distance = t0;
+  }
+  if (t1 < max_distance) {
+    max_distance = t1;
+  }
+  if (max_distance <= min_distance) {
+    return false;
+  }
+
+  t0 = (node.bbox_min.y - ray.origin.y) * inv_d.y;
+  t1 = (node.bbox_max.y - ray.origin.y) * inv_d.y;
+  if (inv_d.y < 0.0) {
+    float temp = t0;
+    t0 = t1;
+    t1 = temp;
+  }
+  if (t0 > min_distance) {
+    min_distance = t0;
+  }
+  if (t1 < max_distance) {
+    max_distance = t1;
+  }
+  if (max_distance <= min_distance) {
+    return false;
+  }
+
+  t0 = (node.bbox_min.z - ray.origin.z) * inv_d.z;
+  t1 = (node.bbox_max.z - ray.origin.z) * inv_d.z;
+  if (inv_d.z < 0.0) {
+    float temp = t0;
+    t0 = t1;
+    t1 = temp;
+  }
+  if (t0 > min_distance) {
+    min_distance = t0;
+  }
+  if (t1 < max_distance) {
+    max_distance = t1;
+  }
+  if (max_distance <= min_distance) {
+    return false;
+  }
+  
   return true;
 }
 

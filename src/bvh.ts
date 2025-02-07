@@ -1,35 +1,19 @@
-import { Vector3, Vector4 } from "three";
-
-class Interval {
-  min: number;
-  max: number;
-};
+import { Vector3 } from "three";
 
 class Aabb {
-  axes: Interval[] = [new Interval(), new Interval(), new Interval()];
+  min: Vector3;
+  max: Vector3;
 
-  constructor(a: Vector3, b: Vector3) {
-    this.axes[0].min = Math.min(a.x, b.x);
-    this.axes[0].max = Math.max(a.x, b.x);
-    this.axes[1].min = Math.min(a.y, b.y);
-    this.axes[1].max = Math.max(a.y, b.y);
-    this.axes[2].min = Math.min(a.z, b.z);
-    this.axes[2].max = Math.max(a.z, b.z);
+  constructor(min: Vector3, max: Vector3) {
+    this.min = min;
+    this.max = max;
     this.pad_to_minimuns();
   }
 
-  to_array() {
-    return [
-      this.axes[0].min, this.axes[0].max,
-      this.axes[1].min, this.axes[1].max,
-      this.axes[2].min, this.axes[2].max
-    ];
-  }
-
   longest_axis() {
-    const x = this.axes[0].max - this.axes[0].min;
-    const y = this.axes[1].max - this.axes[1].min;
-    const z = this.axes[2].max - this.axes[2].min;
+    const x = this.max.x - this.min.x;
+    const y = this.max.y - this.min.y;
+    const z = this.max.z - this.min.z;
     if (x > y && x > z) {
       return 0;
     }
@@ -39,12 +23,25 @@ class Aabb {
     return 2;
   }
 
+  to_array() {
+    return [
+      this.min.x, this.min.y, this.min.z,
+      this.max.x, this.max.y, this.max.z
+    ];
+  }
+
   pad_to_minimuns() {
-    for (let i = 0; i < 3; ++i) {
-      if (this.axes[i].max - this.axes[i].min < 1e-5) {
-        this.axes[i].min -= 1e-5;
-        this.axes[i].max += 1e-5;
-      }
+    if (this.max.x - this.min.x < 2e-5) {
+      this.min.x -= 1e-5;
+      this.max.x += 1e-5;
+    }
+    if (this.max.y - this.min.y < 2e-5) {
+      this.min.y -= 1e-5;
+      this.max.y += 1e-5;
+    }
+    if (this.max.z - this.min.z < 2e-5) {
+      this.min.z -= 1e-5;
+      this.max.z += 1e-5;
     }
   }
 
@@ -65,8 +62,8 @@ class Aabb {
 
   static merge(a: Aabb, b: Aabb) {
     return new Aabb(
-      new Vector3(Math.min(a.axes[0].min, b.axes[0].min), Math.min(a.axes[1].min, b.axes[1].min), Math.min(a.axes[2].min, b.axes[2].min)),
-      new Vector3(Math.max(a.axes[0].max, b.axes[0].max), Math.max(a.axes[1].max, b.axes[1].max), Math.max(a.axes[2].max, b.axes[2].max))
+      new Vector3(Math.min(a.min.x, b.min.x), Math.min(a.min.y, b.min.y), Math.min(a.min.z, b.min.z)),
+      new Vector3(Math.max(a.max.x, b.max.x), Math.max(a.max.y, b.max.y), Math.max(a.max.z, b.max.z))
     );
   }
 }
@@ -88,14 +85,17 @@ type Triangles = { triangle_index: number, material_index: number, aabb: Aabb }[
 export class Bvh {
   list: BvhNode[] = [];
 
-  constructor(positions: Vector3[], indices: Vector4[], groups: { start: number, count: number, material_index: number }[]) {
+  constructor(positions: Float32Array, indices: Float32Array, groups: { start: number, count: number, material_index: number }[]) {
     const triangles: Triangles = [];
     for (let group = 0; group < groups.length; ++group) {
       const { start, count, material_index } = groups[group];
       for (let i = start; i < start + count; i += 3) {
-        const a = positions[indices[i + 0].x];
-        const b = positions[indices[i + 1].x];
-        const c = positions[indices[i + 2].x];
+        const ai = indices[(i + 0) * 4];
+        const bi = indices[(i + 1) * 4];
+        const ci = indices[(i + 2) * 4];
+        const a = new Vector3(positions[ai * 3 + 0], positions[ai * 3 + 1], positions[ai * 3 + 2]);
+        const b = new Vector3(positions[bi * 3 + 0], positions[bi * 3 + 1], positions[bi * 3 + 2]);
+        const c = new Vector3(positions[ci * 3 + 0], positions[ci * 3 + 1], positions[ci * 3 + 2]);
         triangles.push({ triangle_index: i / 3, material_index, aabb: Aabb.from_triangle(a, b, c) });
       }
     }
@@ -129,7 +129,9 @@ export class Bvh {
     }
 
     const axis = bounding_box.longest_axis();
-    triangles.sort((a, b) => a.aabb.axes[axis].min - b.aabb.axes[axis].min);
+    triangles.sort((a, b) => {
+      return a.aabb.min.getComponent(axis) - b.aabb.min.getComponent(axis);
+    });
 
     const mid = Math.ceil(span / 2);
 
