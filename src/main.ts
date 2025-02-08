@@ -74,6 +74,7 @@ async function main() {
   
   renderer.canvas.addEventListener('mousemove', e => process_mouse_move(e, renderer, camera));
   renderer.canvas.addEventListener('mousewheel', e => process_mouse_wheel(e as WheelEvent, camera));
+  renderer.canvas.addEventListener('contextmenu', e => e.preventDefault());
   
   addEventListener('resize', () => resize(renderer, camera, resolution));
 
@@ -213,6 +214,12 @@ function process_mouse_move(event: MouseEvent, renderer: RayTracingRenderer, cam
     if (camera.polar_angle < 0.01) {
       camera.polar_angle = 0.01;
     }
+    camera.needs_update = true;
+  }
+  else if (event.buttons === 2) {
+    renderer.canvas.style.cursor = 'grabbing';
+    camera.look_at.add(camera.uvw[0].clone().multiplyScalar(-0.002 * event.movementX));
+    camera.look_at.add(camera.uvw[1].clone().multiplyScalar(0.002 * event.movementY));
     camera.needs_update = true;
   }
   else {
