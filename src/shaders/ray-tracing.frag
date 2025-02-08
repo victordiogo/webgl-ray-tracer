@@ -20,6 +20,7 @@ uniform sampler2D u_indices;
 uniform sampler2D u_materials;
 uniform sampler2D u_material_indices;
 uniform sampler2D u_bvh;
+uniform sampler2D u_texture_params;
 uniform sampler2DArray u_textures;
 uniform int u_bvh_length;
 uniform int u_max_texture_size;
@@ -105,6 +106,38 @@ ivec2 to_texture_coords(int index) {
   return ivec2(i, j);
 }
 
+struct TextureParams {
+  vec2 scale;
+  int flip_y;
+  float rotation;
+  vec2 repeat;
+  vec2 offset;
+};
+
+TextureParams get_texture_params(int index) {
+  ivec2 coords = to_texture_coords(index * 2 + 0);
+  vec4 data_a = texelFetch(u_texture_params, coords, 0).xyzw;
+  coords = to_texture_coords(index * 2 + 1);
+  vec4 data_b = texelFetch(u_texture_params, coords, 0).xyzw;
+  return TextureParams(data_a.xy, int(data_a.z), data_a.w, data_b.xy, data_b.zw);
+}
+
+vec4 texture_lookup(int index, vec2 uv) {
+  TextureParams params = get_texture_params(index);
+  uv = fract(uv * params.repeat + params.offset);
+  uv *= params.scale;
+  
+  if (params.flip_y == 1) {
+    uv.y = 1.0 - uv.y;
+  }
+
+  float c = cos(params.rotation);
+  float s = sin(params.rotation);
+  uv = vec2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+
+  return texture(u_textures, vec3(uv, index));
+}
+
 ivec4 get_vertex_indices(int triangle_index, int vertex_index) {
   ivec2 coords = to_texture_coords(triangle_index * 3 + vertex_index);
   return ivec4(texelFetch(u_indices, coords, 0).xyzw);
@@ -184,8 +217,8 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
 struct BvhNode {
   int left_index;
   int parent_index;
-  vec3 bbox_min;
-  vec3 bbox_max;
+  vec3 box_min;
+  vec3 box_max;
 };
 
 BvhNode get_bvh_node(int index) {
@@ -197,60 +230,17 @@ BvhNode get_bvh_node(int index) {
 }
 
 bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_distance) {
-  vec3 inv_d = 1.0 / ray.direction;
+  vec3 inv_dir = 1.0 / ray.direction;
+  vec3 t0 = (node.box_min - ray.origin) * inv_dir;
+  vec3 t1 = (node.box_max - ray.origin) * inv_dir;
 
-  float t0 = (node.bbox_min.x - ray.origin.x) * inv_d.x;
-  float t1 = (node.bbox_max.x - ray.origin.x) * inv_d.x;
-  if (inv_d.x < 0.0) {
-    float temp = t0;
-    t0 = t1;
-    t1 = temp;
-  }
-  if (t0 > min_distance) {
-    min_distance = t0;
-  }
-  if (t1 < max_distance) {
-    max_distance = t1;
-  }
-  if (max_distance <= min_distance) {
-    return false;
-  }
+  vec3 tmin = min(t0, t1);
+  vec3 tmax = max(t0, t1);
 
-  t0 = (node.bbox_min.y - ray.origin.y) * inv_d.y;
-  t1 = (node.bbox_max.y - ray.origin.y) * inv_d.y;
-  if (inv_d.y < 0.0) {
-    float temp = t0;
-    t0 = t1;
-    t1 = temp;
-  }
-  if (t0 > min_distance) {
-    min_distance = t0;
-  }
-  if (t1 < max_distance) {
-    max_distance = t1;
-  }
-  if (max_distance <= min_distance) {
-    return false;
-  }
+  float t_enter = max(max(tmin.x, tmin.y), tmin.z);
+  float t_exit = min(min(tmax.x, tmax.y), tmax.z);
 
-  t0 = (node.bbox_min.z - ray.origin.z) * inv_d.z;
-  t1 = (node.bbox_max.z - ray.origin.z) * inv_d.z;
-  if (inv_d.z < 0.0) {
-    float temp = t0;
-    t0 = t1;
-    t1 = temp;
-  }
-  if (t0 > min_distance) {
-    min_distance = t0;
-  }
-  if (t1 < max_distance) {
-    max_distance = t1;
-  }
-  if (max_distance <= min_distance) {
-    return false;
-  }
-  
-  return true;
+  return t_exit > t_enter && t_exit > min_distance && t_enter < max_distance;
 }
 
 bool trace(Ray ray, out HitRecord hit_record) {
@@ -429,17 +419,17 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   data.material = get_material(hit_record.triangle_index);
 
   if (data.material.albedo_index != -1) {
-    vec4 tex = texture(u_textures, vec3(data.uv, data.material.albedo_index));
+    vec4 tex = texture_lookup(data.material.albedo_index, data.uv);
     data.material.albedo = tex.rgb;
     data.material.opacity = tex.a;
   }
 
   if (data.material.roughness_index != -1) {
-    data.material.roughness = texture(u_textures, vec3(data.uv, data.material.roughness_index)).g;
+    data.material.roughness = texture_lookup(data.material.roughness_index, data.uv).g;
   }
 
   if (data.material.metalness_index != -1) {
-    data.material.metalness = texture(u_textures, vec3(data.uv, data.material.metalness_index)).b;
+    data.material.metalness = texture_lookup(data.material.metalness_index, data.uv).b;
   }
 
   if (data.material.normal_index != -1) {
@@ -451,13 +441,13 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
       tangent = normalize(tangent);
       vec3 bitangent = cross(data.normal, tangent);
       mat3 tbn = mat3(tangent, bitangent, data.normal);
-      vec3 tex = texture(u_textures, vec3(data.uv, data.material.normal_index)).rgb;
+      vec3 tex = texture_lookup(data.material.normal_index, data.uv).rgb;
       data.normal = tbn * (2.0 * tex - 1.0);
     }
   }
 
   if (data.material.emission_index != -1) {
-    data.material.emission = texture(u_textures, vec3(data.uv, data.material.emission_index)).xyz;
+    data.material.emission = texture_lookup(data.material.emission_index, data.uv).rgb;
   }
 
   return data;
@@ -540,7 +530,7 @@ void main() {
   vec3 color = cast_ray(ray);
 
   if (u_sample_count == 1) {
-    o_color = vec4(0.0, 0.0, 0.0, 0.0);
+    o_color = vec4(0.0);
   }
   else {
     o_color = texelFetch(u_prev_render, ivec2(gl_FragCoord.xy), 0);

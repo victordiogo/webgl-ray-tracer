@@ -5,22 +5,17 @@ import * as Three from "three";
 
 import { Vector2, Vector3, BufferAttribute, Material, Texture } from "three";
 
-const g_canvas = document.createElement('canvas');
-const g_context = g_canvas.getContext('2d', { willReadFrequently: true });
+class TextureData {
+  data: Float32Array;
+  width: number;
+  height: number;
 
-function get_texture_data(texture: Texture, width: number, height: number) {
-  g_canvas.width = width;
-  g_canvas.height = height;
-  if (!g_context) {
-    throw new Error('Failed to get 2d context');
+  constructor(length: number, pixels_per_element: number, floats_per_pixel: number, max_texture_size: number) {
+    this.width = Math.min(max_texture_size, length * pixels_per_element);
+    this.height = Math.ceil(length * pixels_per_element / this.width);
+    this.data = new Float32Array(this.width * this.height * floats_per_pixel);
   }
-  if (texture.flipY) {
-    g_context.translate(0, height);
-    g_context.scale(1, -1);
-  }
-  g_context.drawImage(texture.image, 0, 0, width, height);
-  return g_context.getImageData(0, 0, width, height).data;
-}
+};
 export class Scene extends Three.Scene {
   num_triangles: number = 0;
   environment: Texture;
@@ -37,6 +32,7 @@ export class Scene extends Three.Scene {
   materials_texture: WebGLTexture | null = null;
   material_indices_texture: WebGLTexture | null = null;
   bvh_texture: WebGLTexture | null = null;
+  texture_params_texture: WebGLTexture | null = null;
   textures_texture: WebGLTexture | null = null;
 
   constructor(environment: Texture) {
@@ -85,25 +81,13 @@ export class Scene extends Three.Scene {
       }
     });
 
-    class TextureData {
-      data: Float32Array;
-      width: number;
-      height: number;
-
-      constructor(length: number, pixels_per_element: number, floats_per_pixel: number) {
-        this.width = Math.min(max_texture_size, length * pixels_per_element);
-        this.height = Math.ceil(length * pixels_per_element / this.width);
-        this.data = new Float32Array(this.width * this.height * floats_per_pixel);
-      }
-    };
-
-    const positions = new TextureData(num_positions, 1, 3);
-    const normals = new TextureData(num_normals, 1, 3);
-    const uvs = new TextureData(num_uvs, 1, 2);
-    const tangents = new TextureData(num_tangents, 1, 3);
-    const indices = new TextureData(num_indices, 1, 4);
-    const materials = new TextureData(num_materials, 4, 4);
-    const material_indices = new TextureData(num_indices / 3, 1, 1);
+    const positions = new TextureData(num_positions, 1, 3, max_texture_size);
+    const normals = new TextureData(num_normals, 1, 3, max_texture_size);
+    const uvs = new TextureData(num_uvs, 1, 2, max_texture_size);
+    const tangents = new TextureData(num_tangents, 1, 3, max_texture_size);
+    const indices = new TextureData(num_indices, 1, 4, max_texture_size);
+    const materials = new TextureData(num_materials, 4, 4, max_texture_size);
+    const material_indices = new TextureData(num_indices / 3, 1, 1, max_texture_size);
     const textures: Texture[] = [];
     const textures_indices = new Map<string, number>();
 
@@ -304,7 +288,9 @@ export class Scene extends Three.Scene {
     gl.deleteTexture(this.tangents_texture);
     gl.deleteTexture(this.indices_texture);
     gl.deleteTexture(this.materials_texture);
+    gl.deleteTexture(this.material_indices_texture);
     gl.deleteTexture(this.bvh_texture);
+    gl.deleteTexture(this.texture_params_texture);
     gl.deleteTexture(this.textures_texture);
 
     const { positions, uvs, normals, tangents, indices, num_indices, materials, material_indices, textures } = this.merge_meshes(gl.MAX_TEXTURE_SIZE);
@@ -359,14 +345,15 @@ export class Scene extends Three.Scene {
     this.material_indices_texture = create_texture(material_indices.data, material_indices.width, material_indices.height, gl.R32F, gl.RED);
  
     // bvh
-    const width = Math.min(gl.MAX_TEXTURE_SIZE, bvh.list.length * 2);
-    const height = Math.ceil(bvh.list.length * 2 / width);
-    const data = new Float32Array(width * height * 4);
-    bvh.list.forEach((node, i) => data.set([node.left_index, node.parent_index, ...node.aabb.to_array()], i * 8));
+    const bvh_data = new TextureData(bvh.list.length, 2, 4, gl.MAX_TEXTURE_SIZE);
+    bvh.list.forEach((node, i) => bvh_data.data.set([node.left_index, node.parent_index, ...node.aabb.to_array()], i * 8));
     gl.uniform1i(gl.getUniformLocation(program, "u_bvh"), 8);
     gl.activeTexture(gl.TEXTURE8);
-    this.bvh_texture = create_texture(data, width, height, gl.RGBA32F, gl.RGBA);
+    this.bvh_texture = create_texture(bvh_data.data, bvh_data.width, bvh_data.height, gl.RGBA32F, gl.RGBA);
     
+    // texture params
+    const texture_params = new TextureData(textures.length, 2, 4, gl.MAX_TEXTURE_SIZE);
+
     gl.uniform1i(gl.getUniformLocation(program, "u_textures"), 9);
     gl.activeTexture(gl.TEXTURE9);
     if (textures.length > 0) {
@@ -380,14 +367,26 @@ export class Scene extends Three.Scene {
       this.textures_texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.textures_texture);
       gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, max_width, max_height, textures.length);
+
       textures.forEach((t, i) => {
-        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, max_width, max_height, 1, gl.RGBA, gl.UNSIGNED_BYTE, get_texture_data(t, max_width, max_height));
+        texture_params.data.set([
+          t.image.width / max_width, t.image.height / max_height, 
+          t.flipY ? 1 : 0, 
+          t.rotation,
+          t.repeat.x, t.repeat.y,
+          t.offset.x, t.offset.y,
+        ], i * 8);
+        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, t.image.width, t.image.height, 1, gl.RGBA, gl.UNSIGNED_BYTE, t.image);
       });
     }
     else {
       this.textures_texture = null;
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
     }
+
+    gl.uniform1i(gl.getUniformLocation(program, "u_texture_params"), 11);
+    gl.activeTexture(gl.TEXTURE11);
+    this.texture_params_texture = create_texture(texture_params.data, texture_params.width, texture_params.height, gl.RGBA32F, gl.RGBA);
 
     this.meshes_needs_update = false;
     return true;

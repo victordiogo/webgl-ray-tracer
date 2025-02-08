@@ -26,6 +26,15 @@ async function create_ground() {
   const normal = await loader.loadAsync('assets/textures/ground/ground-nor.jpg');
   const arm = await loader.loadAsync('assets/textures/ground/ground-arm.jpg');
 
+  albedo.repeat.set(3, 3)
+  albedo.offset.set(0.3, 0.3);
+
+  normal.repeat.set(3, 3)
+  normal.offset.set(0.3, 0.3);
+
+  arm.repeat.set(3, 3)
+  arm.offset.set(0.3, 0.3);
+
   const material = new MeshPhysicalMaterial({
     map: albedo,
     normalMap: normal,
