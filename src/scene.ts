@@ -35,6 +35,7 @@ export class Scene extends Three.Scene {
   tangents_texture: WebGLTexture | null = null;
   indices_texture: WebGLTexture | null = null;
   materials_texture: WebGLTexture | null = null;
+  material_indices_texture: WebGLTexture | null = null;
   bvh_texture: WebGLTexture | null = null;
   textures_texture: WebGLTexture | null = null;
 
@@ -46,12 +47,12 @@ export class Scene extends Three.Scene {
   }
 
   merge_meshes(max_texture_size: number) {
-    let positions_count = 0;
-    let normals_count = 0;
-    let uvs_count = 0;
-    let tangents_count = 0;
-    let indices_count = 0;
-    let materials_count = 0;
+    let num_positions = 0;
+    let num_normals = 0;
+    let num_uvs = 0;
+    let num_tangents = 0;
+    let num_indices = 0;
+    let num_materials = 0;
     
     const meshes: Mesh[] = [];
     this.traverse(obj => {
@@ -73,12 +74,12 @@ export class Scene extends Three.Scene {
           obj.geometry.computeTangents();
         }
         
-        positions_count += obj.geometry.getAttribute('position').count;
-        normals_count += obj.geometry.getAttribute('normal').count;
-        uvs_count += obj.geometry.getAttribute('uv') ? obj.geometry.getAttribute('uv').count : 0;
-        tangents_count += obj.geometry.getAttribute('tangent') ? obj.geometry.getAttribute('tangent').count : 0;
-        indices_count += obj.geometry.getIndex()!.count;
-        materials_count += obj.material instanceof Array ? obj.material.length : 1;
+        num_positions += obj.geometry.getAttribute('position').count;
+        num_normals += obj.geometry.getAttribute('normal').count;
+        num_uvs += obj.geometry.getAttribute('uv') ? obj.geometry.getAttribute('uv').count : 0;
+        num_tangents += obj.geometry.getAttribute('tangent') ? obj.geometry.getAttribute('tangent').count : 0;
+        num_indices += obj.geometry.getIndex()!.count;
+        num_materials += obj.material instanceof Array ? obj.material.length : 1;
         
         meshes.push(obj);
       }
@@ -96,23 +97,24 @@ export class Scene extends Three.Scene {
       }
     };
 
-    const positions = new TextureData(positions_count, 1, 3);
-    const normals = new TextureData(normals_count, 1, 3);
-    const uvs = new TextureData(uvs_count, 1, 2);
-    const tangents = new TextureData(tangents_count, 1, 3);
-    const indices = new TextureData(indices_count, 1, 4);
-    const materials = new TextureData(materials_count, 4, 4);
-    const groups: { start: number, count: number, material_index: number }[] = [];
+    const positions = new TextureData(num_positions, 1, 3);
+    const normals = new TextureData(num_normals, 1, 3);
+    const uvs = new TextureData(num_uvs, 1, 2);
+    const tangents = new TextureData(num_tangents, 1, 3);
+    const indices = new TextureData(num_indices, 1, 4);
+    const materials = new TextureData(num_materials, 4, 4);
+    const material_indices = new TextureData(num_indices / 3, 1, 1);
     const textures: Texture[] = [];
     const textures_indices = new Map<string, number>();
 
-    let materials_offset = 0;
-    let indices_offset = 0;
     let positions_offset = 0;
     let normals_offset = 0;
     let uvs_offset = 0;
     let tangents_offset = 0;
-    
+    let indices_offset = 0;
+    let materials_offset = 0;
+    let material_indices_offset = 0;
+
     for (const mesh of meshes) {
       const mesh_materials: Material[] = mesh.material instanceof Array ? mesh.material : [mesh.material];
       
@@ -201,17 +203,17 @@ export class Scene extends Three.Scene {
         geometry.addGroup(0, index.count, 0);
       }
 
-      const group_offset = indices_offset / 4;
-
       for (let group = 0; group < geometry.groups.length; ++group) {
         const start = geometry.groups[group].start;
         const count = geometry.groups[group].count;
         
         const material_index = (materials_offset / 16) - geometry.groups.length + (geometry.groups[group].materialIndex || group);
 
-        groups.push({ start: group_offset + start, count, material_index });
-
         for (let i = start; i < start + count; ++i) {
+          if (i % 3 === 0) {
+            material_indices.data[material_indices_offset++] = material_index;
+          }
+
           const idx = index.getX(i);
           indices.data.set([
             idx + positions_offset / 3, 
@@ -254,9 +256,9 @@ export class Scene extends Three.Scene {
       }
     }
 
-    this.num_triangles = indices_count / 3;
+    this.num_triangles = num_indices / 3;
 
-    return { positions, normals, uvs, tangents, indices, materials, groups, textures };
+    return { positions, normals, uvs, tangents, indices, num_indices, materials, material_indices, textures };
   }
 
   update_environment(gl: WebGL2RenderingContext, program: WebGLProgram) {
@@ -305,8 +307,8 @@ export class Scene extends Three.Scene {
     gl.deleteTexture(this.bvh_texture);
     gl.deleteTexture(this.textures_texture);
 
-    const { positions, uvs, normals, tangents, indices, materials, groups, textures } = this.merge_meshes(gl.MAX_TEXTURE_SIZE);
-    const bvh = new Bvh(positions.data, indices.data, groups);
+    const { positions, uvs, normals, tangents, indices, num_indices, materials, material_indices, textures } = this.merge_meshes(gl.MAX_TEXTURE_SIZE);
+    const bvh = new Bvh(positions.data, indices.data, num_indices);
     
     gl.useProgram(program);
     gl.uniform1i(gl.getUniformLocation(program, "u_max_texture_size"), gl.MAX_TEXTURE_SIZE);
@@ -350,12 +352,17 @@ export class Scene extends Three.Scene {
     gl.uniform1i(gl.getUniformLocation(program, "u_materials"), 7);
     gl.activeTexture(gl.TEXTURE7);
     this.materials_texture = create_texture(materials.data, materials.width, materials.height, gl.RGBA32F, gl.RGBA);
+
+    // material indices
+    gl.uniform1i(gl.getUniformLocation(program, "u_material_indices"), 10);
+    gl.activeTexture(gl.TEXTURE10);
+    this.material_indices_texture = create_texture(material_indices.data, material_indices.width, material_indices.height, gl.R32F, gl.RED);
  
     // bvh
     const width = Math.min(gl.MAX_TEXTURE_SIZE, bvh.list.length * 2);
     const height = Math.ceil(bvh.list.length * 2 / width);
     const data = new Float32Array(width * height * 4);
-    bvh.list.forEach((node, i) => data.set([node.left_index, node.material_index, ...node.aabb.to_array()], i * 8));
+    bvh.list.forEach((node, i) => data.set([node.left_index, node.parent_index, ...node.aabb.to_array()], i * 8));
     gl.uniform1i(gl.getUniformLocation(program, "u_bvh"), 8);
     gl.activeTexture(gl.TEXTURE8);
     this.bvh_texture = create_texture(data, width, height, gl.RGBA32F, gl.RGBA);

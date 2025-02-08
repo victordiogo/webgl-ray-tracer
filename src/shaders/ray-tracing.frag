@@ -18,6 +18,7 @@ uniform sampler2D u_uvs;
 uniform sampler2D u_tangents;
 uniform sampler2D u_indices;
 uniform sampler2D u_materials;
+uniform sampler2D u_material_indices;
 uniform sampler2D u_bvh;
 uniform sampler2DArray u_textures;
 uniform int u_bvh_length;
@@ -92,10 +93,10 @@ struct HitRecord {
   float t;
   float p;
   float q;
-  int material_index;
   ivec3 uv_index;
   ivec3 normal_index;
   ivec3 tangent_index;
+  int triangle_index;
 };
 
 ivec2 to_texture_coords(int index) {
@@ -175,13 +176,14 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
   hit_record.uv_index = ivec3(a_indices.y, b_indices.y, c_indices.y);
   hit_record.normal_index = ivec3(a_indices.z, b_indices.z, c_indices.z);
   hit_record.tangent_index = ivec3(a_indices.w, b_indices.w, c_indices.w);
+  hit_record.triangle_index = triangle_index;
 
   return true;
 }
 
 struct BvhNode {
   int left_index;
-  int material_index;
+  int parent_index;
   vec3 bbox_min;
   vec3 bbox_max;
 };
@@ -252,31 +254,42 @@ bool hit_bounding_box(BvhNode node, Ray ray, float min_distance, float max_dista
 }
 
 bool trace(Ray ray, out HitRecord hit_record) {
-  int stack[64];
-  int stack_size = 0;
-  stack[stack_size++] = u_bvh_length - 1;
+  int current = u_bvh_length - 1;
+  int prev = -1;
 
   hit_record.t = g_max_float;
 
-  while (stack_size > 0) {
-    int node_index = stack[--stack_size];
-    BvhNode node = get_bvh_node(node_index);
+  HitRecord temp_record;
 
-    if (!hit_bounding_box(node, ray, 0.0, hit_record.t)) {
-      continue;
-    }
+  while (current != -1) {
+    BvhNode node = get_bvh_node(current);
 
-    if (node.left_index < 0) {
-      HitRecord temp_record;
-      int triangle_index = -node.left_index - 1;
-      if (hit_triangle(triangle_index, ray, 0.0, hit_record.t, temp_record)) {
-        hit_record = temp_record;
-        hit_record.material_index = node.material_index;
+    if (prev == node.parent_index) {  
+      if (!hit_bounding_box(node, ray, 0.0, hit_record.t)) {
+        prev = current;
+        current = node.parent_index;
+        continue;
+      }
+
+      if (node.left_index < 0) {
+        if (hit_triangle(-node.left_index - 1, ray, 0.0, hit_record.t, temp_record)) {
+          hit_record = temp_record;
+        }
+        prev = current;
+        current = node.parent_index;
+      }
+      else {
+        prev = current;
+        current = node.left_index;
       }
     }
-    else {
-      stack[stack_size++] = node.left_index;
-      stack[stack_size++] = node_index - 1;
+    else if (prev == node.left_index) {
+      prev = current;
+      current = current - 1;
+    }
+    else { // prev == node.right_index
+      prev = current;
+      current = node.parent_index;
     }
   }
 
@@ -302,8 +315,10 @@ struct Material {
   float refraction_index;
 };
 
-Material get_material(int material_index) {
-  ivec2 coords = to_texture_coords(material_index * 4 + 0);
+Material get_material(int triangle_index) {
+  ivec2 coords = to_texture_coords(triangle_index);
+  int material_index = int(texelFetch(u_material_indices, coords, 0).x);
+  coords = to_texture_coords(material_index * 4 + 0);
   vec4 data_a = texelFetch(u_materials, coords, 0).xyzw;
   coords = to_texture_coords(material_index * 4 + 1);
   vec4 data_b = texelFetch(u_materials, coords, 0).xyzw;
@@ -411,7 +426,7 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
     data.normal = -data.normal;
   }
   data.uv = r * a_uv + hit_record.p * b_uv + hit_record.q * c_uv;
-  data.material = get_material(hit_record.material_index);
+  data.material = get_material(hit_record.triangle_index);
 
   if (data.material.albedo_index != -1) {
     vec4 tex = texture(u_textures, vec3(data.uv, data.material.albedo_index));
@@ -446,74 +461,6 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   }
 
   return data;
-}
-
-vec3 fresnel_schlick(float cosTheta, vec3 F0){
-  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-} 
-
-float distribution_ggx(vec3 N, vec3 H, float roughness) {
-  float a      = roughness*roughness;
-  float a2     = a*a;
-  float NdotH  = max(dot(N, H), 0.0);
-  float NdotH2 = NdotH*NdotH;
-
-  float num   = a2;
-  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-  denom = g_pi * denom * denom;
-
-  return num / denom;
-}
-
-float geometry_schlick_ggx(float NdotV, float roughness) {
-  float r = (roughness + 1.0);
-  float k = (r*r) / 8.0;
-
-  float num   = NdotV;
-  float denom = NdotV * (1.0 - k) + k;
-
-  return num / denom;
-}
-
-float geometry_smith(vec3 N, vec3 V, vec3 L, float roughness) {
-  float NdotV = max(dot(N, V), 0.0);
-  float NdotL = max(dot(N, L), 0.0);
-  float ggx2  = geometry_schlick_ggx(NdotV, roughness);
-  float ggx1  = geometry_schlick_ggx(NdotL, roughness);
-
-  return ggx1 * ggx2;
-}
-
-ScatterData scatter_pbr(Ray ray, SurfaceData surface_data) {
-  vec3 N = surface_data.normal;
-  vec3 V = normalize(-ray.direction);
-  vec3 L = random_unit_vector();
-  if (dot(L, N) < 0.0) {
-    L = -L;
-  }
-  L = normalize(L);
-
-  vec3 H = normalize(L + V);
-
-  vec3 f0 = mix(vec3(0.04), surface_data.material.albedo, surface_data.material.metalness);
-  vec3 F = fresnel_schlick(clamp(dot(H, V), 0.0, 1.0), f0);
-
-  float NDF = distribution_ggx(N, H, surface_data.material.roughness);
-  float G = geometry_smith(N, V, L, surface_data.material.roughness);
-
-  vec3 numerator = NDF * G * F;
-  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 1e-5;
-  vec3 specular = numerator / denominator;
-
-  vec3 ks = F;
-  vec3 kd = vec3(1.0) - ks;
-  kd *= 1.0 - surface_data.material.metalness;
-
-  float ndotl = max(dot(N, L), 0.0);
-
-  vec3 attenuation = (kd * surface_data.material.albedo / g_pi + specular) * ndotl;
-
-  return ScatterData(attenuation, Ray(surface_data.point + N * g_scatter_bias, L));
 }
 
 vec3 texture_environment(vec3 direction) {

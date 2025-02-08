@@ -70,34 +70,31 @@ class Aabb {
 
 class BvhNode {
   left_index: number; // negative if leaf
-  material_index: number;
+  parent_index: number;
   aabb: Aabb;
 
-  constructor(left_index: number, material_index: number, aabb: Aabb) {
+  constructor(left_index: number, parent_index: number, aabb: Aabb) {
     this.left_index = left_index;
-    this.material_index = material_index;
+    this.parent_index = parent_index;
     this.aabb = aabb;
   }
 };
 
-type Triangles = { triangle_index: number, material_index: number, aabb: Aabb }[];
+type Triangles = { triangle_index: number, aabb: Aabb }[];
 
 export class Bvh {
   list: BvhNode[] = [];
 
-  constructor(positions: Float32Array, indices: Float32Array, groups: { start: number, count: number, material_index: number }[]) {
+  constructor(positions: Float32Array, indices: Float32Array, num_indices: number) {
     const triangles: Triangles = [];
-    for (let group = 0; group < groups.length; ++group) {
-      const { start, count, material_index } = groups[group];
-      for (let i = start; i < start + count; i += 3) {
-        const ai = indices[(i + 0) * 4];
-        const bi = indices[(i + 1) * 4];
-        const ci = indices[(i + 2) * 4];
-        const a = new Vector3(positions[ai * 3 + 0], positions[ai * 3 + 1], positions[ai * 3 + 2]);
-        const b = new Vector3(positions[bi * 3 + 0], positions[bi * 3 + 1], positions[bi * 3 + 2]);
-        const c = new Vector3(positions[ci * 3 + 0], positions[ci * 3 + 1], positions[ci * 3 + 2]);
-        triangles.push({ triangle_index: i / 3, material_index, aabb: Aabb.from_triangle(a, b, c) });
-      }
+    for (let i = 0; i < num_indices; i += 3) {
+      const ai = indices[(i + 0) * 4];
+      const bi = indices[(i + 1) * 4];
+      const ci = indices[(i + 2) * 4];
+      const a = new Vector3(positions[ai * 3 + 0], positions[ai * 3 + 1], positions[ai * 3 + 2]);
+      const b = new Vector3(positions[bi * 3 + 0], positions[bi * 3 + 1], positions[bi * 3 + 2]);
+      const c = new Vector3(positions[ci * 3 + 0], positions[ci * 3 + 1], positions[ci * 3 + 2]);
+      triangles.push({ triangle_index: i / 3, aabb: Aabb.from_triangle(a, b, c) });
     }
     const {left_index, aabb} = this.build(triangles);
     this.list.push(new BvhNode(left_index, -1, aabb));
@@ -108,16 +105,16 @@ export class Bvh {
     
     if (span == 1) {
       const tri = triangles[0];
-      const node = new BvhNode(-tri.triangle_index - 1, tri.material_index, tri.aabb);
+      const node = new BvhNode(-tri.triangle_index - 1, this.list.length + 2, tri.aabb);
       this.list.push(node); // left
       this.list.push(node); // right
       return {left_index: this.list.length - 2, aabb: tri.aabb};
     }
     else if (span == 2) {
       const left_tri = triangles[0];
-      const left = new BvhNode(-left_tri.triangle_index - 1, left_tri.material_index, left_tri.aabb);
+      const left = new BvhNode(-left_tri.triangle_index - 1, this.list.length + 2, left_tri.aabb);
       const right_tri = triangles[1];
-      const right = new BvhNode(-right_tri.triangle_index - 1, right_tri.material_index, right_tri.aabb);
+      const right = new BvhNode(-right_tri.triangle_index - 1, this.list.length + 2, right_tri.aabb);
       this.list.push(left);
       this.list.push(right);
       return {left_index: this.list.length - 2, aabb: Aabb.merge(left_tri.aabb, right_tri.aabb)};
@@ -141,7 +138,8 @@ export class Bvh {
     const left_index = this.list.length - 1;
 
     const right_data = this.build(triangles.slice(mid));
-    const right = new BvhNode(right_data.left_index, -1, right_data.aabb);
+    const right = new BvhNode(right_data.left_index, this.list.length + 1, right_data.aabb);
+    left.parent_index = this.list.length + 1;
     this.list.push(right);
 
     return { left_index, aabb: Aabb.merge(left_data.aabb, right_data.aabb)};
