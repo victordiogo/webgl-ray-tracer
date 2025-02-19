@@ -37,7 +37,7 @@ function to_physical_material(material: Material, info: MaterialInfo) {
   physical.color = info.kd ? new Color().fromArray(info.kd) : new Color(1, 1, 1);
   physical.emissive = info.ke ? new Color().fromArray(info.ke) : new Color(0, 0, 0);
   physical.transmission = 1 - material.opacity;
-  physical.opacity = material.opacity;
+  physical.opacity = 1;
   physical.transparent = material.transparent;
   physical.map = material["map"] || null;
   physical.metalness = info["pm"] ? parseFloat(info["pm"]) : 0;

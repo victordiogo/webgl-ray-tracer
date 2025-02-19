@@ -86,7 +86,7 @@ export class Scene extends Three.Scene {
     const uvs = new TextureData(num_uvs, 1, 2, max_texture_size);
     const tangents = new TextureData(num_tangents, 1, 3, max_texture_size);
     const indices = new TextureData(num_indices, 1, 4, max_texture_size);
-    const materials = new TextureData(num_materials, 4, 4, max_texture_size);
+    const materials = new TextureData(num_materials, 5, 4, max_texture_size);
     const material_indices = new TextureData(num_indices / 3, 1, 1, max_texture_size);
     const textures: Texture[] = [];
     const textures_indices = new Map<string, number>();
@@ -112,6 +112,8 @@ export class Scene extends Three.Scene {
         let roughness_index = -1;
         let metalness_index = -1;
         let emission_index = -1;
+        let opacity_index = -1;
+        let transmission_index = -1;
 
         if (m["map"]) {
           if (!textures_indices.has(m["map"].uuid)) {
@@ -153,13 +155,29 @@ export class Scene extends Three.Scene {
           emission_index = textures_indices.get(m["emissiveMap"].uuid)!;
         }
 
+        if (m["alphaMap"]) {
+          if (!textures_indices.has(m["alphaMap"].uuid)) {
+            textures_indices.set(m["alphaMap"].uuid, textures.length);
+            textures.push(m["alphaMap"]);
+          }
+          opacity_index = textures_indices.get(m["alphaMap"].uuid)!;
+        }
+
+        if (m["transmissionMap"]) {
+          if (!textures_indices.has(m["transmissionMap"].uuid)) {
+            textures_indices.set(m["transmissionMap"].uuid, textures.length);
+            textures.push(m["transmissionMap"]);
+          }
+          transmission_index = textures_indices.get(m["transmissionMap"].uuid)!;
+        }
+
         const albedo = m["color"] || new Vector3(1, 1, 1);
         const ei = m["emissiveIntensity"] !== undefined ? m["emissiveIntensity"] : 1;
         const emissive = m["emissive"] || new Vector3(0, 0, 0);
         emissive.multiplyScalar(ei);
         const metalness = m["metalness"] !== undefined ? m["metalness"] : 0;
         const roughness = m["roughness"] !== undefined ? m["roughness"] : 1;
-        const opacity = m.opacity >= 0.99 ? m["transmission"] !== undefined ? 1 - m["transmission"] : 1 : m.opacity;
+        const transmission = m["transmission"] !== undefined ? m["transmission"] : 0;
 
         materials.data.set([
           albedo_index, 
@@ -167,16 +185,19 @@ export class Scene extends Three.Scene {
           metalness_index,
           normal_index,
           emission_index,
+          opacity_index,
+          transmission_index,
+          m.opacity,
           ...albedo.toArray(), 
+          transmission,
           ...emissive.toArray(), 
-          metalness, 
-          roughness, 
-          opacity,
           m['ior'] || 1,
-          0
+          roughness, 
+          metalness, 
+          0, 0
         ], materials_offset);
 
-        materials_offset += 16;
+        materials_offset += 20;
       });
 
       const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
@@ -191,7 +212,7 @@ export class Scene extends Three.Scene {
         const start = geometry.groups[group].start;
         const count = geometry.groups[group].count;
         
-        const material_index = (materials_offset / 16) - geometry.groups.length + (geometry.groups[group].materialIndex || group);
+        const material_index = (materials_offset / 20) - geometry.groups.length + (geometry.groups[group].materialIndex || group);
 
         for (let i = start; i < start + count; ++i) {
           if (i % 3 === 0) {

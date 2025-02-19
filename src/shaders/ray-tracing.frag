@@ -292,42 +292,50 @@ struct ScatterData {
 };
 
 struct Material {
-  int albedo_index;
+  int albedo_index; 
   int roughness_index;
   int metalness_index;
   int normal_index;
   int emission_index;
-  vec3 albedo;
-  vec3 emission;
-  float metalness;
-  float roughness;
+  int opacity_index;
+  int transmission_index;
   float opacity;
+  vec3 albedo;
+  float transmission;
+  vec3 emission;
   float refraction_index;
+  float roughness;
+  float metalness;
 };
 
 Material get_material(int triangle_index) {
   ivec2 coords = to_texture_coords(triangle_index);
   int material_index = int(texelFetch(u_material_indices, coords, 0).x);
-  coords = to_texture_coords(material_index * 4 + 0);
+  coords = to_texture_coords(material_index * 5 + 0);
   vec4 data_a = texelFetch(u_materials, coords, 0).xyzw;
-  coords = to_texture_coords(material_index * 4 + 1);
+  coords = to_texture_coords(material_index * 5 + 1);
   vec4 data_b = texelFetch(u_materials, coords, 0).xyzw;
-  coords = to_texture_coords(material_index * 4 + 2);
+  coords = to_texture_coords(material_index * 5 + 2);
   vec4 data_c = texelFetch(u_materials, coords, 0).xyzw;
-  coords = to_texture_coords(material_index * 4 + 3);
+  coords = to_texture_coords(material_index * 5 + 3);
   vec4 data_d = texelFetch(u_materials, coords, 0).xyzw;
+  coords = to_texture_coords(material_index * 5 + 4);
+  vec4 data_e = texelFetch(u_materials, coords, 0).xyzw;
   return Material(
     int(data_a.x), 
     int(data_a.y),
     int(data_a.z),
     int(data_a.w),
     int(data_b.x),
-    data_b.yzw,
+    int(data_b.y),
+    int(data_b.z),
+    data_b.w,
     data_c.xyz,
     data_c.w,
-    data_d.x,
-    data_d.y,
-    data_d.z
+    data_d.xyz,
+    data_d.w,
+    data_e.x,
+    data_e.y
   );
 }
 
@@ -420,16 +428,16 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
 
   if (data.material.albedo_index != -1) {
     vec4 tex = texture_lookup(data.material.albedo_index, data.uv);
-    data.material.albedo = tex.rgb;
-    data.material.opacity = tex.a;
+    data.material.albedo *= tex.rgb;
+    data.material.opacity *= tex.a;
   }
 
   if (data.material.roughness_index != -1) {
-    data.material.roughness = texture_lookup(data.material.roughness_index, data.uv).g;
+    data.material.roughness *= texture_lookup(data.material.roughness_index, data.uv).g;
   }
 
   if (data.material.metalness_index != -1) {
-    data.material.metalness = texture_lookup(data.material.metalness_index, data.uv).b;
+    data.material.metalness *= texture_lookup(data.material.metalness_index, data.uv).b;
   }
 
   if (data.material.normal_index != -1) {
@@ -447,7 +455,15 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   }
 
   if (data.material.emission_index != -1) {
-    data.material.emission = texture_lookup(data.material.emission_index, data.uv).rgb;
+    data.material.emission *= texture_lookup(data.material.emission_index, data.uv).rgb;
+  }
+
+  if (data.material.opacity_index != -1) {
+    data.material.opacity *= texture_lookup(data.material.opacity_index, data.uv).r;
+  }
+
+  if (data.material.transmission_index != -1) {
+    data.material.transmission *= texture_lookup(data.material.transmission_index, data.uv).r;
   }
 
   return data;
@@ -464,12 +480,11 @@ vec3 cast_ray(Ray ray) {
 
   for (int depth = 0; depth <= u_max_depth; ++depth) {
     if (depth == u_max_depth) {
-      color = vec3(0.0);
-      break;
+      return vec3(0.0);
     }
 
     if (near_zero(color, 1e-3)) {
-      break;
+      return color;
     }
 
     HitRecord hit_record;
@@ -481,6 +496,7 @@ vec3 cast_ray(Ray ray) {
 
     SurfaceData surface_data = get_surface_data(ray, hit_record);
     // color = surface_data.material.opacity * vec3(1.0);
+    // color = surface_data.material.transmission * vec3(1.0);
     // color = surface_data.normal * 0.5 + 0.5;
     // color = surface_data.material.albedo;
     // color = surface_data.material.emission;
@@ -493,9 +509,8 @@ vec3 cast_ray(Ray ray) {
       break;
     }
 
-    // ScatterData scatter_data = scatter_pbr(ray, surface_data);
     ScatterData scatter_data;
-    if (surface_data.material.opacity < 0.8) {
+    if (surface_data.material.transmission > 0.1) {
       scatter_data = scatter_dielectric(ray, surface_data);
     }
     else if (surface_data.material.metalness > 0.8) {
@@ -504,6 +519,7 @@ vec3 cast_ray(Ray ray) {
     else {
       scatter_data = scatter_lambertian(surface_data);
     }
+
     color *= scatter_data.attenuation;
     ray = scatter_data.scattered;
   }
