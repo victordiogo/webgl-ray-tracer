@@ -53,7 +53,7 @@ async function main() {
   
   const camera = new OrbitalCamera(90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0.5, 0), 50, 1.5, 0);
   
-  const environment = await load_hdr('assets/environments/lost-city.hdr');
+  const environment = await load_hdr('assets/environments/photostudio.hdr');
   let scene = new Scene(environment);
   
   let model = await import_obj('assets/models/cornell-box/cornell-box.obj');

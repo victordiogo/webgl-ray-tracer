@@ -77,6 +77,19 @@ vec3 random_unit_vector() {
   float r = sqrt(1.0 - z * z);
   return vec3(r * cos(a), r * sin(a), z);
 }
+
+vec3 random_cosine_direction() {
+  float r1 = rand();
+  float r2 = rand();
+
+  float phi = 2.0 * g_pi * r1;
+  float x = cos(phi) * sqrt(r2);
+  float y = sin(phi) * sqrt(r2);
+  float z = sqrt(1.0 - r2);
+
+  return vec3(x, y, z);
+}
+
 // <-- RANDOM NUMBER GENERATOR
 
 // --> RAY 
@@ -351,25 +364,81 @@ bool near_zero(vec3 v, float epsilon) {
   return (abs(v.x) < epsilon) && (abs(v.y) < epsilon) && (abs(v.z) < epsilon);
 }
 
-const float g_scatter_bias = 5e-6;
+const float g_scatter_bias = 5e-5;
 
-ScatterData scatter_lambertian(SurfaceData surface_data) {
-  vec3 direction = surface_data.normal + random_unit_vector();
-  if (near_zero(direction, 1e-5)) {
-    direction = surface_data.normal;
-  }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * g_scatter_bias, direction);
-  return ScatterData(surface_data.material.albedo, scattered);
+vec3 sample_ggx_vndf(vec3 Ve, float alpha) {
+  float U1 = rand();
+  float U2 = rand();
+
+  vec3 Vh = normalize(vec3(Ve.x * alpha, Ve.y * alpha, Ve.z));
+
+  vec3 T1 = (Vh.z < 0.99999) ? normalize(cross(vec3(0.0, 0.0, 1.0), Vh)) : vec3(1.0, 0.0, 0.0);
+  vec3 T2 = cross(Vh, T1);
+
+  float r = sqrt(U1);
+  float phi = 2.0 * g_pi * U2;
+  float t1 = r * cos(phi);
+  float t2 = r * sin(phi);
+  float s = 0.5 * (1.0 + Vh.z);
+  t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
+
+  vec3 Nh = T1 * t1 + T2 * t2 + Vh * sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2));
+
+  vec3 Ne = normalize(vec3(Nh.xy * alpha, max(0.0, Nh.z)));
+  return Ne;
 }
 
-ScatterData scatter_metal(Ray ray, SurfaceData surface_data) {
-  vec3 reflected = reflect(ray.direction, surface_data.normal);
-  vec3 ref = normalize(reflected) + surface_data.material.roughness * random_unit_vector();
-  if (dot(ref, surface_data.normal) < 0.0) {
-    ref = reflected;
+float A(vec3 V, float alpha) {
+  float a2 = alpha * alpha;
+  return (-1.0 + sqrt(1.0 + a2 * (V.x * V.x + V.y * V.y) / (V.z * V.z))) * 0.5;
+}
+
+float G1(vec3 V, float alpha) {
+  return 1.0 / (1.0 + A(V, alpha));
+}
+
+float G2(vec3 V1, vec3 V2, float alpha) {
+  return 1.0 / (1.0 + A(V1, alpha) + A(V2, alpha));
+}
+
+vec3 F(float cos_theta, vec3 F0) {
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+ScatterData scatter_physical(Ray ray, SurfaceData surface_data) {
+  vec3 other = (abs(surface_data.normal.x) > 0.5) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+  vec3 ortho = normalize(cross(surface_data.normal, other));
+  vec3 ortho2 = cross(surface_data.normal, ortho);
+  mat3 basis = mat3(ortho2, ortho, surface_data.normal);
+  mat3 inv_basis = transpose(basis);
+
+  vec3 Ve = normalize(inv_basis * -ray.direction);
+  float alpha = surface_data.material.roughness * surface_data.material.roughness;
+  vec3 h = sample_ggx_vndf(Ve, alpha);
+
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, surface_data.material.albedo, surface_data.material.metalness);
+
+  vec3 ks = F(max(dot(Ve, h), 0.0), F0);
+  vec3 kd = vec3(1.0) - ks;
+  kd *= 1.0 - surface_data.material.metalness;
+
+  vec3 Li;
+  vec3 attenuation;
+
+  float pdiffuse = dot(kd, vec3(0.299, 0.587, 0.114));
+  if (rand() < pdiffuse) {
+    Li = random_cosine_direction();
+    attenuation = kd * surface_data.material.albedo;
+    attenuation /= pdiffuse;
   }
-  Ray scattered = Ray(surface_data.point + surface_data.normal * g_scatter_bias, ref);
-  return ScatterData(surface_data.material.albedo, scattered);
+  else {
+    Li = reflect(-Ve, h); 
+    attenuation = ks * G2(Ve, Li, alpha) / G1(Ve, alpha);
+    attenuation /= (1.0 - pdiffuse);
+  }
+
+  return ScatterData(attenuation, Ray(surface_data.point + surface_data.normal * g_scatter_bias, basis * Li));
 }
 
 float reflectance(float cosine, float ri) {
@@ -466,6 +535,10 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
     data.material.transmission *= texture_lookup(data.material.transmission_index, data.uv).r;
   }
 
+  if (data.material.roughness < 0.0001) {
+    data.material.roughness = 0.0001;
+  }
+
   return data;
 }
 
@@ -513,11 +586,8 @@ vec3 cast_ray(Ray ray) {
     if (surface_data.material.transmission > 0.1) {
       scatter_data = scatter_dielectric(ray, surface_data);
     }
-    else if (surface_data.material.metalness > 0.8) {
-      scatter_data = scatter_metal(ray, surface_data);
-    }
     else {
-      scatter_data = scatter_lambertian(surface_data);
+      scatter_data = scatter_physical(ray, surface_data);
     }
 
     color *= scatter_data.attenuation;
