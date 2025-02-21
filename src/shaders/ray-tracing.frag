@@ -384,8 +384,7 @@ vec3 sample_ggx_vndf(vec3 Ve, float alpha) {
 
   vec3 Nh = T1 * t1 + T2 * t2 + Vh * sqrt(max(0.0, 1.0 - t1 * t1 - t2 * t2));
 
-  vec3 Ne = normalize(vec3(Nh.xy * alpha, max(0.0, Nh.z)));
-  return Ne;
+  return normalize(vec3(Nh.xy * alpha, max(0.0, Nh.z)));
 }
 
 float A(vec3 V, float alpha) {
@@ -406,13 +405,12 @@ vec3 F(float cos_theta, vec3 F0) {
 }
 
 ScatterData scatter_physical(Ray ray, SurfaceData surface_data) {
-  vec3 other = (abs(surface_data.normal.x) > 0.5) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-  vec3 ortho = normalize(cross(surface_data.normal, other));
-  vec3 ortho2 = cross(surface_data.normal, ortho);
-  mat3 basis = mat3(ortho2, ortho, surface_data.normal);
+  vec3 tangent = (abs(surface_data.normal.z) < 0.99999) ? normalize(cross(vec3(0.0, 0.0, 1.0), surface_data.normal)) : vec3(1.0, 0.0, 0.0);
+  vec3 bitangent = cross(surface_data.normal, tangent);
+  mat3 basis = mat3(tangent, bitangent, surface_data.normal);
   mat3 inv_basis = transpose(basis);
 
-  vec3 Ve = normalize(inv_basis * -ray.direction);
+  vec3 Ve = inv_basis * -ray.direction;
   float alpha = surface_data.material.roughness * surface_data.material.roughness;
   vec3 h = sample_ggx_vndf(Ve, alpha);
 
@@ -450,8 +448,7 @@ float reflectance(float cosine, float ri) {
 ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
   float refraction_index = surface_data.front_face ? 1.0 / surface_data.material.refraction_index : surface_data.material.refraction_index;
 
-  vec3 unit_direction = normalize(ray.direction);
-  float cos_theta = min(dot(-unit_direction, surface_data.normal), 1.0);  
+  float cos_theta = min(dot(-ray.direction, surface_data.normal), 1.0);  
   float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
 
   bool cannot_refract = refraction_index * sin_theta > 1.0;
@@ -459,18 +456,15 @@ ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
   vec3 point;
 
   if (cannot_refract || reflectance(cos_theta, refraction_index) > rand()) {
-    direction = reflect(unit_direction, surface_data.normal);
+    direction = reflect(ray.direction, surface_data.normal);
     point = surface_data.point + surface_data.normal * g_scatter_bias;
   }
   else {
-    direction = refract(unit_direction, surface_data.normal, refraction_index);
+    direction = refract(ray.direction, surface_data.normal, refraction_index);
     point = surface_data.point - surface_data.normal * g_scatter_bias;
   }
 
-  float a = surface_data.material.opacity;
-  vec3 attenuation = a * surface_data.material.albedo + (1.0 - a) * vec3(1.0);
-
-  return ScatterData(attenuation, Ray(point, direction));
+  return ScatterData(vec3(1.0), Ray(point, direction));
 }
 
 SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
@@ -519,7 +513,7 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
       vec3 bitangent = cross(data.normal, tangent);
       mat3 tbn = mat3(tangent, bitangent, data.normal);
       vec3 tex = texture_lookup(data.material.normal_index, data.uv).rgb;
-      data.normal = tbn * (2.0 * tex - 1.0);
+      data.normal = normalize(tbn * (2.0 * tex - 1.0));
     }
   }
 
@@ -543,7 +537,6 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
 }
 
 vec3 texture_environment(vec3 direction) {
-  direction = normalize(direction);
   vec2 uv = vec2(0.5 - atan(direction.z, direction.x) / (2.0 * g_pi), 0.5 - asin(clamp(direction.y, -1.0, 1.0)) / g_pi);
   return texture(u_environment, uv).xyz * u_environment_intensity;
 }
@@ -606,7 +599,9 @@ Ray generate_ray() {
 
   vec3 position = u_initial_position + gl_FragCoord.x * u_step_x + gl_FragCoord.y * u_step_y;
   vec3 origin = u_look_from + radial_offset;
-  return Ray(origin, position + pos_offset - origin);
+  vec3 direction = normalize(position + pos_offset - origin);
+
+  return Ray(origin, direction);
 }
 
 void main() {

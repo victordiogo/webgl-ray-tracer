@@ -1,6 +1,6 @@
 # To Do
-- see erichlof example ray tracing
 
-- Importance Sampling
-- Better IBL
+- Light Sampling
+- Better Opacity / Transmission
+- Better IBL (Remove fireflies caused by the sun)
 - Improve BVH creation time

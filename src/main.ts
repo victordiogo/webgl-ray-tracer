@@ -130,9 +130,9 @@ async function main() {
     last_time = current_time;
     ++frame_count;
     
-    process_keyboard_input(keyboard, camera, frame_time);
-    
     renderer.render(scene, camera);
+    
+    process_keyboard_input(keyboard, camera, frame_time, renderer);
     
     const elapsed = current_time - last_avg_time;
     if (elapsed > 1000) {
@@ -160,7 +160,15 @@ function resize(renderer: RayTracingRenderer, camera: OrbitalCamera, resolution:
   camera.needs_update = true;
 }
 
-function process_keyboard_input(keyboard: KeyboardState, camera: OrbitalCamera, frame_time: number) {
+function process_keyboard_input(keyboard: KeyboardState, camera: OrbitalCamera, frame_time: number, renderer: RayTracingRenderer) {
+  if (keyboard.down('Z')) {
+    //save image
+    const link = document.createElement('a');
+    link.download = 'image.png';
+    link.href = renderer.canvas.toDataURL();
+    link.click();
+  }
+
   if (keyboard.pressed('W')) {
     camera.fov -= 0.1 * frame_time;
     if (camera.fov < 1) {
