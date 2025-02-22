@@ -107,9 +107,7 @@ struct HitRecord {
   float t;
   float p;
   float q;
-  ivec3 uv_index;
-  ivec3 normal_index;
-  ivec3 tangent_index;
+  ivec3 indices;
   int triangle_index;
 };
 
@@ -151,9 +149,9 @@ vec4 texture_lookup(int index, vec2 uv) {
   return texture(u_textures, vec3(uv, index));
 }
 
-ivec4 get_vertex_indices(int triangle_index, int vertex_index) {
+int get_attribute_index(int triangle_index, int vertex_index) {
   ivec2 coords = to_texture_coords(triangle_index * 3 + vertex_index);
-  return ivec4(texelFetch(u_indices, coords, 0).xyzw);
+  return int(texelFetch(u_indices, coords, 0).r);
 }
 
 vec3 get_position(int index) {
@@ -179,13 +177,13 @@ vec3 get_tangent(int index) {
 bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_distance, out HitRecord hit_record) {
   // o + td = a + p * ab + q * ac
 
-  ivec4 a_indices = get_vertex_indices(triangle_index, 0);
-  ivec4 b_indices = get_vertex_indices(triangle_index, 1);
-  ivec4 c_indices = get_vertex_indices(triangle_index, 2);
+  int a_index = get_attribute_index(triangle_index, 0);
+  int b_index = get_attribute_index(triangle_index, 1);
+  int c_index = get_attribute_index(triangle_index, 2);
   
-  vec3 a = get_position(a_indices.x);
-  vec3 b = get_position(b_indices.x);
-  vec3 c = get_position(c_indices.x);
+  vec3 a = get_position(a_index);
+  vec3 b = get_position(b_index);
+  vec3 c = get_position(c_index);
 
   vec3 ab = b - a;
   vec3 ac = c - a;
@@ -219,9 +217,7 @@ bool hit_triangle(int triangle_index, Ray ray, float min_distance, float max_dis
   hit_record.t = t;
   hit_record.p = p;
   hit_record.q = q;
-  hit_record.uv_index = ivec3(a_indices.y, b_indices.y, c_indices.y);
-  hit_record.normal_index = ivec3(a_indices.z, b_indices.z, c_indices.z);
-  hit_record.tangent_index = ivec3(a_indices.w, b_indices.w, c_indices.w);
+  hit_record.indices = ivec3(a_index, b_index, c_index);
   hit_record.triangle_index = triangle_index;
 
   return true;
@@ -470,13 +466,13 @@ ScatterData scatter_dielectric(Ray ray, SurfaceData surface_data) {
 SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   SurfaceData data;
 
-  vec2 a_uv = get_uv(hit_record.uv_index.x);
-  vec2 b_uv = get_uv(hit_record.uv_index.y);
-  vec2 c_uv = get_uv(hit_record.uv_index.z);
+  vec2 a_uv = get_uv(hit_record.indices.x);
+  vec2 b_uv = get_uv(hit_record.indices.y);
+  vec2 c_uv = get_uv(hit_record.indices.z);
 
-  vec3 a_normal = get_normal(hit_record.normal_index.x);
-  vec3 b_normal = get_normal(hit_record.normal_index.y);
-  vec3 c_normal = get_normal(hit_record.normal_index.z);
+  vec3 a_normal = get_normal(hit_record.indices.x);
+  vec3 b_normal = get_normal(hit_record.indices.y);
+  vec3 c_normal = get_normal(hit_record.indices.z);
 
   float r = 1.0 - hit_record.p - hit_record.q;
 
@@ -504,9 +500,9 @@ SurfaceData get_surface_data(Ray ray, HitRecord hit_record) {
   }
 
   if (data.material.normal_index != -1) {
-    vec3 a_tangent = get_tangent(hit_record.tangent_index.x);
-    vec3 b_tangent = get_tangent(hit_record.tangent_index.y);
-    vec3 c_tangent = get_tangent(hit_record.tangent_index.z);
+    vec3 a_tangent = get_tangent(hit_record.indices.x);
+    vec3 b_tangent = get_tangent(hit_record.indices.y);
+    vec3 c_tangent = get_tangent(hit_record.indices.z);
     vec3 tangent = r * a_tangent + hit_record.p * b_tangent + hit_record.q * c_tangent;
     if (!near_zero(tangent, 1e-4)) {
       tangent = normalize(tangent);
@@ -575,8 +571,13 @@ vec3 cast_ray(Ray ray) {
       break;
     }
 
+    if (rand() > surface_data.material.opacity) {
+      ray.origin = surface_data.point - surface_data.normal * g_scatter_bias;
+      continue;
+    }
+
     ScatterData scatter_data;
-    if (surface_data.material.transmission > 0.1) {
+    if (rand() < surface_data.material.transmission) {
       scatter_data = scatter_dielectric(ray, surface_data);
     }
     else {

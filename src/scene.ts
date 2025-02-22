@@ -1,21 +1,9 @@
 import { Bvh } from "./bvh";
+import { TextureData } from "./texture-data";
 
-import { Mesh } from "three";
+import { Mesh, Vector2, Vector3, BufferAttribute, Material, Texture } from "three";
 import * as Three from "three";
 
-import { Vector2, Vector3, BufferAttribute, Material, Texture } from "three";
-
-class TextureData {
-  data: Float32Array;
-  width: number;
-  height: number;
-
-  constructor(length: number, pixels_per_element: number, floats_per_pixel: number, max_texture_size: number) {
-    this.width = Math.min(max_texture_size, length * pixels_per_element);
-    this.height = Math.ceil(length * pixels_per_element / this.width);
-    this.data = new Float32Array(this.width * this.height * floats_per_pixel);
-  }
-};
 export class Scene extends Three.Scene {
   num_triangles: number = 0;
   environment: Texture;
@@ -43,10 +31,8 @@ export class Scene extends Three.Scene {
   }
 
   merge_meshes(max_texture_size: number) {
-    let num_positions = 0;
-    let num_normals = 0;
+    let num_attributes = 0;
     let num_uvs = 0;
-    let num_tangents = 0;
     let num_indices = 0;
     let num_materials = 0;
     
@@ -65,15 +51,22 @@ export class Scene extends Three.Scene {
             obj.geometry.getIndex()!.array[i] = i;
           }
         }
-        
-        if (!obj.geometry.getAttribute('tangent') && obj.geometry.getAttribute('uv')) {
-          obj.geometry.computeTangents();
+
+        if (!obj.geometry.getAttribute('uv')) {
+          const position = obj.geometry.getAttribute('position');
+          obj.geometry.setAttribute('uv', new BufferAttribute(new Float32Array(position.count * 2), 2));
         }
         
-        num_positions += obj.geometry.getAttribute('position').count;
-        num_normals += obj.geometry.getAttribute('normal').count;
-        num_uvs += obj.geometry.getAttribute('uv') ? obj.geometry.getAttribute('uv').count : 0;
-        num_tangents += obj.geometry.getAttribute('tangent') ? obj.geometry.getAttribute('tangent').count : 0;
+        if (!obj.geometry.getAttribute('tangent')) {
+          obj.geometry.computeTangents();
+        }
+
+        if (obj.material instanceof Array && obj.material.length == 0) {
+          obj.material.push(new Material());
+        }
+        
+        num_attributes += obj.geometry.getAttribute('position').count;
+        num_uvs += obj.geometry.getAttribute('uv').count;
         num_indices += obj.geometry.getIndex()!.count;
         num_materials += obj.material instanceof Array ? obj.material.length : 1;
         
@@ -81,11 +74,13 @@ export class Scene extends Three.Scene {
       }
     });
 
-    const positions = new TextureData(num_positions, 1, 3, max_texture_size);
-    const normals = new TextureData(num_normals, 1, 3, max_texture_size);
-    const uvs = new TextureData(num_uvs, 1, 2, max_texture_size);
-    const tangents = new TextureData(num_tangents, 1, 3, max_texture_size);
-    const indices = new TextureData(num_indices, 1, 4, max_texture_size);
+    console.log(num_uvs, num_attributes)
+
+    const positions = new TextureData(num_attributes, 1, 3, max_texture_size);
+    const normals = new TextureData(num_attributes, 1, 3, max_texture_size);
+    const uvs = new TextureData(num_attributes, 1, 2, max_texture_size);
+    const tangents = new TextureData(num_attributes, 1, 3, max_texture_size);
+    const indices = new TextureData(num_indices, 1, 1, max_texture_size);
     const materials = new TextureData(num_materials, 5, 4, max_texture_size);
     const material_indices = new TextureData(num_indices / 3, 1, 1, max_texture_size);
     const textures: Texture[] = [];
@@ -101,10 +96,6 @@ export class Scene extends Three.Scene {
 
     for (const mesh of meshes) {
       const mesh_materials: Material[] = mesh.material instanceof Array ? mesh.material : [mesh.material];
-      
-      if (mesh_materials.length === 0) {
-        mesh_materials.push(new Material());
-      }
 
       mesh_materials.forEach(m => {
         let albedo_index = -1;
@@ -220,13 +211,8 @@ export class Scene extends Three.Scene {
           }
 
           const idx = index.getX(i);
-          indices.data.set([
-            idx + positions_offset / 3, 
-            idx + uvs_offset / 2, 
-            idx + normals_offset / 3, 
-            idx + tangents_offset / 3,
-          ], indices_offset);
-          indices_offset += 4;
+          indices.data.set([idx + positions_offset / 3], indices_offset);
+          ++indices_offset;
         }
       }
 
@@ -244,20 +230,16 @@ export class Scene extends Three.Scene {
 
       const uv = geometry.getAttribute('uv');
 
-      if (uv) {
-        for (let i = 0; i < uv.count; ++i) {
-          uvs.data.set(new Vector2().fromBufferAttribute(uv as BufferAttribute, i).toArray(), uvs_offset);
-          uvs_offset += 2;
-        }
+      for (let i = 0; i < uv.count; ++i) {
+        uvs.data.set(new Vector2().fromBufferAttribute(uv as BufferAttribute, i).toArray(), uvs_offset);
+        uvs_offset += 2;
       }
 
       const tangent = geometry.getAttribute('tangent');
 
-      if (tangent) {
-        for (let i = 0; i < tangent.count; ++i) {
-          tangents.data.set(new Vector3().fromBufferAttribute(tangent, i).toArray(), tangents_offset);
-          tangents_offset += 3;  
-        }
+      for (let i = 0; i < tangent.count; ++i) {
+        tangents.data.set(new Vector3().fromBufferAttribute(tangent, i).toArray(), tangents_offset);
+        tangents_offset += 3;  
       }
     }
 
@@ -321,56 +303,47 @@ export class Scene extends Three.Scene {
     gl.uniform1i(gl.getUniformLocation(program, "u_max_texture_size"), gl.MAX_TEXTURE_SIZE);
     gl.uniform1i(gl.getUniformLocation(program, "u_bvh_length"), bvh.list.length);
 
-    function create_texture(data: Float32Array, width: number, height: number, internal_format: number, format: number) {
-      const texture = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, internal_format, width, height, 0, format, gl.FLOAT, data);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      return texture;
-    }
-
     // positions
     gl.uniform1i(gl.getUniformLocation(program, "u_positions"), 2);
     gl.activeTexture(gl.TEXTURE2);
-    this.positions_texture = create_texture(positions.data, positions.width, positions.height, gl.RGB32F, gl.RGB);
+    this.positions_texture = positions.create_texture(gl);
     
     // normals
     gl.uniform1i(gl.getUniformLocation(program, "u_normals"), 3);
     gl.activeTexture(gl.TEXTURE3);
-    this.normals_texture = create_texture(normals.data, normals.width, normals.height, gl.RGB32F, gl.RGB);
+    this.normals_texture = normals.create_texture(gl);
     
     // uvs
     gl.uniform1i(gl.getUniformLocation(program, "u_uvs"), 4);
     gl.activeTexture(gl.TEXTURE4);
-    this.uvs_texture = create_texture(uvs.data, uvs.width, uvs.height, gl.RG32F, gl.RG);
+    this.uvs_texture = uvs.create_texture(gl);
     
     // tangents
     gl.uniform1i(gl.getUniformLocation(program, "u_tangents"), 5);
     gl.activeTexture(gl.TEXTURE5);
-    this.tangents_texture = create_texture(tangents.data, tangents.width, tangents.height, gl.RGB32F, gl.RGB);
+    this.tangents_texture = tangents.create_texture(gl);
     
     // indices
     gl.uniform1i(gl.getUniformLocation(program, "u_indices"), 6);
     gl.activeTexture(gl.TEXTURE6);
-    this.indices_texture = create_texture(indices.data, indices.width, indices.height, gl.RGBA32F, gl.RGBA);
+    this.indices_texture = indices.create_texture(gl);
     
     // materials
     gl.uniform1i(gl.getUniformLocation(program, "u_materials"), 7);
     gl.activeTexture(gl.TEXTURE7);
-    this.materials_texture = create_texture(materials.data, materials.width, materials.height, gl.RGBA32F, gl.RGBA);
+    this.materials_texture = materials.create_texture(gl);
 
     // material indices
     gl.uniform1i(gl.getUniformLocation(program, "u_material_indices"), 10);
     gl.activeTexture(gl.TEXTURE10);
-    this.material_indices_texture = create_texture(material_indices.data, material_indices.width, material_indices.height, gl.R32F, gl.RED);
+    this.material_indices_texture = material_indices.create_texture(gl);
  
     // bvh
     const bvh_data = new TextureData(bvh.list.length, 2, 4, gl.MAX_TEXTURE_SIZE);
     bvh.list.forEach((node, i) => bvh_data.data.set([node.left_index, node.parent_index, ...node.aabb.to_array()], i * 8));
     gl.uniform1i(gl.getUniformLocation(program, "u_bvh"), 8);
     gl.activeTexture(gl.TEXTURE8);
-    this.bvh_texture = create_texture(bvh_data.data, bvh_data.width, bvh_data.height, gl.RGBA32F, gl.RGBA);
+    this.bvh_texture = bvh_data.create_texture(gl);
     
     // texture params
     const texture_params = new TextureData(textures.length, 2, 4, gl.MAX_TEXTURE_SIZE);
@@ -407,7 +380,7 @@ export class Scene extends Three.Scene {
 
     gl.uniform1i(gl.getUniformLocation(program, "u_texture_params"), 11);
     gl.activeTexture(gl.TEXTURE11);
-    this.texture_params_texture = create_texture(texture_params.data, texture_params.width, texture_params.height, gl.RGBA32F, gl.RGBA);
+    this.texture_params_texture = texture_params.create_texture(gl);
 
     this.meshes_needs_update = false;
     return true;

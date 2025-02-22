@@ -3,7 +3,7 @@ import { Scene } from './scene';
 
 import KeyboardState from '../lib/keyboard-state.js';
 
-import { Vector3, FloatType, PlaneGeometry, MeshPhysicalMaterial, TextureLoader, Mesh } from 'three';
+import { Vector3, FloatType, PlaneGeometry, MeshPhysicalMaterial, TextureLoader, Mesh, SphereGeometry } from 'three';
 import { RayTracingRenderer } from './ray-tracing-renderer';
 import { import_gltf, import_obj } from './model';
 import { RGBELoader } from 'three/examples/jsm/Addons.js';
@@ -53,7 +53,7 @@ async function main() {
   
   const camera = new OrbitalCamera(90, 0, 2, renderer.canvas.width, renderer.canvas.height, new Vector3(0, 0.5, 0), 50, 1.5, 0);
   
-  const environment = await load_hdr('assets/environments/photostudio.hdr');
+  const environment = await load_hdr('assets/environments/pure-sky.hdr');
   let scene = new Scene(environment);
   
   let model = await import_obj('assets/models/cornell-box/cornell-box.obj');

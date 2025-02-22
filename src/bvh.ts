@@ -88,9 +88,9 @@ export class Bvh {
   constructor(positions: Float32Array, indices: Float32Array, num_indices: number) {
     const triangles: Triangles = [];
     for (let i = 0; i < num_indices; i += 3) {
-      const ai = indices[(i + 0) * 4];
-      const bi = indices[(i + 1) * 4];
-      const ci = indices[(i + 2) * 4];
+      const ai = indices[i + 0];
+      const bi = indices[i + 1];
+      const ci = indices[i + 2];
       const a = new Vector3(positions[ai * 3 + 0], positions[ai * 3 + 1], positions[ai * 3 + 2]);
       const b = new Vector3(positions[bi * 3 + 0], positions[bi * 3 + 1], positions[bi * 3 + 2]);
       const c = new Vector3(positions[ci * 3 + 0], positions[ci * 3 + 1], positions[ci * 3 + 2]);
